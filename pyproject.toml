@@ -1,0 +1,29 @@
+[project]
+name = "spotify-playlister"
+version = "0.1.0"
+description = "Export Spotify playlists to CSV or recreate them as YouTube playlists."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+  { name = "JT" }
+]
+dependencies = []
+
+[project.optional-dependencies]
+youtube = [
+  "google-api-python-client>=2.130.0",
+  "google-auth-oauthlib>=1.2.0",
+]
+test = [
+  "pytest>=8.0.0",
+]
+
+[project.scripts]
+spotify-playlister = "spotify_playlister.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
