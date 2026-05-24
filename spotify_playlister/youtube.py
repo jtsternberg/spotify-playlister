@@ -23,6 +23,10 @@ class YouTubeRateLimitError(YouTubeError):
     pass
 
 
+class YouTubeQuotaExceededError(YouTubeError):
+    pass
+
+
 @dataclass(frozen=True)
 class YouTubeVideo:
     video_id: str
@@ -137,10 +141,14 @@ class YouTubeClient:
                 .execute()
             )
         except Exception as exc:
-            if _is_rate_limit_error(exc):
+            quota_reason = _quota_error_reason(exc)
+            if quota_reason == "rateLimitExceeded":
                 raise YouTubeRateLimitError(
-                    "YouTube search quota was exceeded. If this is a daily project quota, wait for quota reset; "
-                    "if it is a per-minute limit, wait a minute or increase --youtube-search-delay."
+                    "YouTube search hit a per-minute rate limit. Wait a minute or increase --youtube-search-delay."
+                ) from exc
+            if quota_reason == "quotaExceeded":
+                raise YouTubeQuotaExceededError(
+                    "YouTube search hit the project quota limit. Wait for the YouTube Data API quota reset or increase quota in Google Cloud."
                 ) from exc
             raise
 
@@ -239,12 +247,30 @@ def match_tracks(
     return matches
 
 
-def _is_rate_limit_error(exc: Exception) -> bool:
+def _quota_error_reason(exc: Exception) -> str | None:
     status = getattr(getattr(exc, "resp", None), "status", None)
     if status not in {403, 429}:
-        return False
+        return None
+    details = _error_details(exc)
+    if "rateLimitExceeded" in details:
+        return "rateLimitExceeded"
+    if "quotaExceeded" in details:
+        return "quotaExceeded"
+    if "quota" in details.lower() and status == 403:
+        return "quotaExceeded"
+    if "quota" in details.lower() and status == 429:
+        return "rateLimitExceeded"
+    return None
+
+
+def _error_details(exc: Exception) -> str:
+    content = getattr(exc, "content", None)
+    if isinstance(content, bytes):
+        return content.decode("utf-8", errors="replace")
+    if isinstance(content, str):
+        return content
     details = str(exc)
-    return any(reason in details for reason in ("rateLimitExceeded", "quotaExceeded")) or "quota" in details.lower()
+    return details
 
 
 def _client_config_from_env() -> dict[str, dict[str, object]]:

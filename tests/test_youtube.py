@@ -2,7 +2,16 @@ import os
 import unittest
 
 from spotify_playlister.models import PlaylistTrack
-from spotify_playlister.youtube import YouTubeClient, YouTubeError, YouTubeRateLimitError, YouTubeVideo, _client_config_from_env, _youtube_redirect, match_tracks
+from spotify_playlister.youtube import (
+    YouTubeClient,
+    YouTubeError,
+    YouTubeQuotaExceededError,
+    YouTubeRateLimitError,
+    YouTubeVideo,
+    _client_config_from_env,
+    _youtube_redirect,
+    match_tracks,
+)
 
 
 class YouTubeTests(unittest.TestCase):
@@ -105,6 +114,12 @@ class YouTubeTests(unittest.TestCase):
 
     def test_search_video_handles_daily_quota_error(self):
         service = FakeSearchService(FakeHttpError(403, "quotaExceeded"))
+
+        with self.assertRaises(YouTubeQuotaExceededError):
+            YouTubeClient(service).search_video("Song Artist")
+
+    def test_search_video_handles_per_minute_rate_limit_error(self):
+        service = FakeSearchService(FakeHttpError(429, "rateLimitExceeded"))
 
         with self.assertRaises(YouTubeRateLimitError):
             YouTubeClient(service).search_video("Song Artist")
