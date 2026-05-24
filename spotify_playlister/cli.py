@@ -22,7 +22,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     export_youtube = subparsers.add_parser("export-youtube", help="Create or update a YouTube playlist from a Spotify playlist.")
     export_youtube.add_argument("playlist", help="Spotify playlist ID, URI, or open.spotify.com playlist URL.")
-    export_youtube.add_argument("--youtube-client-secrets", type=Path, required=True, help="Google OAuth Desktop client JSON.")
+    export_youtube.add_argument(
+        "--youtube-client-secrets",
+        type=Path,
+        help="Google OAuth Desktop client JSON. Defaults to YOUTUBE_CLIENT_ID/YOUTUBE_CLIENT_SECRET from .env.",
+    )
     export_youtube.add_argument("--youtube-playlist-id", help="Existing YouTube playlist ID to add videos to.")
     export_youtube.add_argument("--title", help="Title for a new YouTube playlist.")
     export_youtube.add_argument("--description", default="Imported from Spotify with spotify-playlister.")
@@ -73,10 +77,8 @@ def export_csv(spotify: SpotifyClient, args: argparse.Namespace) -> int:
 def export_youtube(spotify: SpotifyClient, args: argparse.Namespace) -> int:
     playlist_id = extract_playlist_id(args.playlist)
     tracks = spotify.playlist_tracks(playlist_id)
-    youtube = YouTubeClient.from_client_secrets(
-        args.youtube_client_secrets.expanduser(),
-        cache_dir() / "youtube-token.json",
-    )
+    client_secrets = args.youtube_client_secrets.expanduser() if args.youtube_client_secrets else None
+    youtube = YouTubeClient.from_oauth_config(cache_dir() / "youtube-token.json", client_secrets)
     matches = match_tracks(youtube, tracks)
 
     for match in matches:

@@ -58,21 +58,23 @@ Install YouTube support:
 python3 -m pip install -e '.[youtube]'
 ```
 
-Create an OAuth Desktop app in Google Cloud with the YouTube Data API enabled, then download the OAuth client JSON.
+Create an OAuth Desktop app in Google Cloud with the YouTube Data API enabled. You can either download the OAuth client JSON or put the client values in `.env`:
+
+```bash
+YOUTUBE_CLIENT_ID="your-google-oauth-client-id"
+YOUTUBE_CLIENT_SECRET="your-google-oauth-client-secret"
+```
 
 Run a dry run first:
 
 ```bash
-spotify-playlister export-youtube "https://open.spotify.com/playlist/..." \
-  --youtube-client-secrets ~/Downloads/client_secret.json \
-  --dry-run
+spotify-playlister export-youtube "https://open.spotify.com/playlist/..." --dry-run
 ```
 
 Create a new YouTube playlist and add the best video search result for each Spotify track:
 
 ```bash
 spotify-playlister export-youtube "https://open.spotify.com/playlist/..." \
-  --youtube-client-secrets ~/Downloads/client_secret.json \
   --title "Imported from Spotify"
 ```
 
@@ -80,9 +82,10 @@ Use an existing YouTube playlist instead:
 
 ```bash
 spotify-playlister export-youtube "spotify:playlist:..." \
-  --youtube-client-secrets ~/Downloads/client_secret.json \
   --youtube-playlist-id "PL..."
 ```
+
+If you prefer the downloaded JSON file instead of `.env`, add `--youtube-client-secrets ~/Downloads/client_secret.json`.
 
 ## Notes
 

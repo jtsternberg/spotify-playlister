@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -35,7 +36,7 @@ class YouTubeClient:
         self.service = service
 
     @classmethod
-    def from_client_secrets(cls, client_secrets: Path, token_path: Path) -> "YouTubeClient":
+    def from_oauth_config(cls, token_path: Path, client_secrets: Path | None = None) -> "YouTubeClient":
         try:
             from google.auth.transport.requests import Request
             from google.oauth2.credentials import Credentials
@@ -51,13 +52,20 @@ class YouTubeClient:
             if credentials and credentials.expired and credentials.refresh_token:
                 credentials.refresh(Request())
             else:
-                flow = InstalledAppFlow.from_client_secrets_file(str(client_secrets), YOUTUBE_SCOPES)
+                if client_secrets:
+                    flow = InstalledAppFlow.from_client_secrets_file(str(client_secrets), YOUTUBE_SCOPES)
+                else:
+                    flow = InstalledAppFlow.from_client_config(_client_config_from_env(), YOUTUBE_SCOPES)
                 credentials = flow.run_local_server(port=0)
             token_path.parent.mkdir(parents=True, exist_ok=True)
             token_path.write_text(credentials.to_json(), encoding="utf-8")
             token_path.chmod(0o600)
 
         return cls(build("youtube", "v3", credentials=credentials))
+
+    @classmethod
+    def from_client_secrets(cls, client_secrets: Path, token_path: Path) -> "YouTubeClient":
+        return cls.from_oauth_config(token_path, client_secrets)
 
     def create_playlist(self, title: str, description: str = "", privacy_status: str = "private") -> str:
         response = (
@@ -123,3 +131,22 @@ def match_tracks(client: YouTubeClient, tracks: Iterable[PlaylistTrack]) -> list
                 )
             )
     return matches
+
+
+def _client_config_from_env() -> dict[str, dict[str, object]]:
+    client_id = os.environ.get("YOUTUBE_CLIENT_ID")
+    client_secret = os.environ.get("YOUTUBE_CLIENT_SECRET")
+    if not client_id or not client_secret:
+        raise YouTubeError(
+            "Provide --youtube-client-secrets or set YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET in .env."
+        )
+
+    return {
+        "installed": {
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "auth_uri": os.environ.get("YOUTUBE_AUTH_URI", "https://accounts.google.com/o/oauth2/auth"),
+            "token_uri": os.environ.get("YOUTUBE_TOKEN_URI", "https://oauth2.googleapis.com/token"),
+            "redirect_uris": ["http://localhost"],
+        }
+    }
