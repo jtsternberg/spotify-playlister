@@ -87,11 +87,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    load_env()
-    parser = build_parser()
-    args = parser.parse_args(argv)
-
     try:
+        load_env()
+        parser = build_parser()
+        args = parser.parse_args(argv)
+
         spotify = SpotifyClient.from_env()
         if args.command == "playlists":
             return list_playlists(spotify)
@@ -106,6 +106,9 @@ def main(argv: list[str] | None = None) -> int:
     except (SpotifyError, YouTubeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
+    except KeyboardInterrupt:
+        print("\nInterrupted.", file=sys.stderr)
+        return 130
     return 0
 
 

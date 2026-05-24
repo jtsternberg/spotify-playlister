@@ -31,13 +31,13 @@ Then fill in `SPOTIFY_CLIENT_ID` with your Spotify app's client ID. `.env` is ig
 List your Spotify playlists:
 
 ```bash
-spotify-playlister playlists
+.venv/bin/spotify-playlister playlists
 ```
 
 Export by playlist ID, URI, or Spotify URL:
 
 ```bash
-spotify-playlister export-csv "https://open.spotify.com/playlist/..." --output playlist.csv
+.venv/bin/spotify-playlister export-csv "https://open.spotify.com/playlist/..." --output playlist.csv
 ```
 
 The CSV includes:
@@ -78,13 +78,13 @@ YOUTUBE_REDIRECT_URI="http://localhost:8766/"
 Run a dry run first:
 
 ```bash
-spotify-playlister export-youtube "https://open.spotify.com/playlist/..." --dry-run
+.venv/bin/spotify-playlister export-youtube "https://open.spotify.com/playlist/..." --dry-run
 ```
 
 The CLI waits between YouTube searches to avoid per-minute quota errors. If your Google project is still rate-limited, use a slower delay:
 
 ```bash
-spotify-playlister export-youtube "https://open.spotify.com/playlist/..." \
+.venv/bin/spotify-playlister export-youtube "https://open.spotify.com/playlist/..." \
   --dry-run \
   --youtube-search-delay 5
 ```
@@ -92,14 +92,14 @@ spotify-playlister export-youtube "https://open.spotify.com/playlist/..." \
 Create a new YouTube playlist and add the best video search result for each Spotify track:
 
 ```bash
-spotify-playlister export-youtube "https://open.spotify.com/playlist/..." \
+.venv/bin/spotify-playlister export-youtube "https://open.spotify.com/playlist/..." \
   --title "Imported from Spotify"
 ```
 
 Use an existing YouTube playlist instead:
 
 ```bash
-spotify-playlister export-youtube "spotify:playlist:..." \
+.venv/bin/spotify-playlister export-youtube "spotify:playlist:..." \
   --youtube-playlist-id "PL..."
 ```
 
@@ -110,7 +110,7 @@ If you prefer the downloaded JSON file instead of `.env`, add `--youtube-client-
 For playlists that already exist in both Spotify and YouTube, sync missing Spotify tracks into the YouTube playlist:
 
 ```bash
-spotify-playlister sync-youtube "https://open.spotify.com/playlist/..." \
+.venv/bin/spotify-playlister sync-youtube "https://open.spotify.com/playlist/..." \
   --youtube-playlist-id "PL..." \
   --dry-run
 ```
@@ -118,7 +118,7 @@ spotify-playlister sync-youtube "https://open.spotify.com/playlist/..." \
 The sync command keeps a SQLite cache at `~/.spotify-playlister/sync.sqlite` so later runs can reuse Spotify-to-YouTube matches instead of searching again. When the dry run looks right, run without `--dry-run`:
 
 ```bash
-spotify-playlister sync-youtube "https://open.spotify.com/playlist/..." \
+.venv/bin/spotify-playlister sync-youtube "https://open.spotify.com/playlist/..." \
   --youtube-playlist-id "PL..."
 ```
 
@@ -127,7 +127,7 @@ spotify-playlister sync-youtube "https://open.spotify.com/playlist/..." \
 Change an existing playlist to `private`, `unlisted`, or `public`:
 
 ```bash
-spotify-playlister set-youtube-privacy "PL..." unlisted
+.venv/bin/spotify-playlister set-youtube-privacy "PL..." unlisted
 ```
 
 ## Notes
