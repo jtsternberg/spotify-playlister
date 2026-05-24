@@ -7,7 +7,7 @@ from pathlib import Path
 from .csv_export import write_tracks_csv
 from .env import load_env
 from .spotify import SpotifyClient, SpotifyError, cache_dir, extract_playlist_id
-from .youtube import YouTubeClient, YouTubeError, match_tracks
+from .youtube import DEFAULT_RATE_LIMIT_RETRY_SECONDS, DEFAULT_SEARCH_DELAY_SECONDS, YouTubeClient, YouTubeError, match_tracks
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -32,6 +32,18 @@ def build_parser() -> argparse.ArgumentParser:
     export_youtube.add_argument("--description", default="Imported from Spotify with spotify-playlister.")
     export_youtube.add_argument("--privacy", choices=["private", "unlisted", "public"], default="private")
     export_youtube.add_argument("--dry-run", action="store_true", help="Search YouTube and print matches without creating or inserting.")
+    export_youtube.add_argument(
+        "--youtube-search-delay",
+        type=float,
+        default=DEFAULT_SEARCH_DELAY_SECONDS,
+        help="Seconds to wait between YouTube search requests. Defaults to %(default)s.",
+    )
+    export_youtube.add_argument(
+        "--youtube-rate-limit-retry",
+        type=float,
+        default=DEFAULT_RATE_LIMIT_RETRY_SECONDS,
+        help="Seconds to wait before retrying once after a YouTube search rate limit. Use 0 to fail immediately.",
+    )
 
     return parser
 
@@ -79,7 +91,13 @@ def export_youtube(spotify: SpotifyClient, args: argparse.Namespace) -> int:
     tracks = spotify.playlist_tracks(playlist_id)
     client_secrets = args.youtube_client_secrets.expanduser() if args.youtube_client_secrets else None
     youtube = YouTubeClient.from_oauth_config(cache_dir() / "youtube-token.json", client_secrets)
-    matches = match_tracks(youtube, tracks)
+    matches = match_tracks(
+        youtube,
+        tracks,
+        delay_seconds=args.youtube_search_delay,
+        rate_limit_retry_seconds=args.youtube_rate_limit_retry,
+        on_progress=lambda track: print(f"Searching YouTube for {track.position}. {track.artists_text} - {track.track_name}", file=sys.stderr),
+    )
 
     for match in matches:
         print(f"{match.track.position}. {match.track.artists_text} - {match.track.track_name}")

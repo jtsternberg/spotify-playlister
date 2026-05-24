@@ -81,6 +81,14 @@ Run a dry run first:
 spotify-playlister export-youtube "https://open.spotify.com/playlist/..." --dry-run
 ```
 
+The CLI waits between YouTube searches to avoid per-minute quota errors. If your Google project is still rate-limited, use a slower delay:
+
+```bash
+spotify-playlister export-youtube "https://open.spotify.com/playlist/..." \
+  --dry-run \
+  --youtube-search-delay 5
+```
+
 Create a new YouTube playlist and add the best video search result for each Spotify track:
 
 ```bash

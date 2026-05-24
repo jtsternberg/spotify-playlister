@@ -1,18 +1,25 @@
 from __future__ import annotations
 
 import os
+import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable
 from urllib.parse import ParseResult, urlparse
 
 from .models import PlaylistTrack
 
 YOUTUBE_SCOPES = ["https://www.googleapis.com/auth/youtube"]
 DEFAULT_YOUTUBE_REDIRECT_URI = "http://localhost:8766/"
+DEFAULT_SEARCH_DELAY_SECONDS = 2.0
+DEFAULT_RATE_LIMIT_RETRY_SECONDS = 65.0
 
 
 class YouTubeError(RuntimeError):
+    pass
+
+
+class YouTubeRateLimitError(YouTubeError):
     pass
 
 
@@ -89,11 +96,19 @@ class YouTubeClient:
         return str(response["id"])
 
     def search_video(self, query: str) -> YouTubeVideo | None:
-        response = (
-            self.service.search()
-            .list(part="snippet", q=query, type="video", maxResults=1, videoEmbeddable="true")
-            .execute()
-        )
+        try:
+            response = (
+                self.service.search()
+                .list(part="snippet", q=query, type="video", maxResults=1, videoEmbeddable="true")
+                .execute()
+            )
+        except Exception as exc:
+            if _is_rate_limit_error(exc):
+                raise YouTubeRateLimitError(
+                    "YouTube search quota was exceeded. Wait a minute or increase --youtube-search-delay."
+                ) from exc
+            raise
+
         items = response.get("items", [])
         if not items:
             return None
@@ -123,10 +138,28 @@ class YouTubeClient:
         )
 
 
-def match_tracks(client: YouTubeClient, tracks: Iterable[PlaylistTrack]) -> list[YouTubeMatch]:
+def match_tracks(
+    client: YouTubeClient,
+    tracks: Iterable[PlaylistTrack],
+    *,
+    delay_seconds: float = DEFAULT_SEARCH_DELAY_SECONDS,
+    rate_limit_retry_seconds: float = DEFAULT_RATE_LIMIT_RETRY_SECONDS,
+    sleep: Callable[[float], None] = time.sleep,
+    on_progress: Callable[[PlaylistTrack], None] | None = None,
+) -> list[YouTubeMatch]:
     matches: list[YouTubeMatch] = []
-    for track in tracks:
-        match = client.search_video(track.youtube_query)
+    for index, track in enumerate(tracks):
+        if index and delay_seconds > 0:
+            sleep(delay_seconds)
+        if on_progress:
+            on_progress(track)
+        try:
+            match = client.search_video(track.youtube_query)
+        except YouTubeRateLimitError:
+            if rate_limit_retry_seconds <= 0:
+                raise
+            sleep(rate_limit_retry_seconds)
+            match = client.search_video(track.youtube_query)
         if match:
             matches.append(
                 YouTubeMatch(
@@ -138,6 +171,14 @@ def match_tracks(client: YouTubeClient, tracks: Iterable[PlaylistTrack]) -> list
                 )
             )
     return matches
+
+
+def _is_rate_limit_error(exc: Exception) -> bool:
+    status = getattr(getattr(exc, "resp", None), "status", None)
+    if status != 429:
+        return False
+    details = str(exc)
+    return "rateLimitExceeded" in details or "quota" in details.lower()
 
 
 def _client_config_from_env() -> dict[str, dict[str, object]]:

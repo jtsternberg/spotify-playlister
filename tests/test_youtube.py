@@ -1,7 +1,8 @@
 import os
 import unittest
 
-from spotify_playlister.youtube import YouTubeError, _client_config_from_env, _youtube_redirect
+from spotify_playlister.models import PlaylistTrack
+from spotify_playlister.youtube import YouTubeError, YouTubeRateLimitError, YouTubeVideo, _client_config_from_env, _youtube_redirect, match_tracks
 
 
 class YouTubeTests(unittest.TestCase):
@@ -50,6 +51,67 @@ class YouTubeTests(unittest.TestCase):
                 os.environ.pop("YOUTUBE_REDIRECT_URI", None)
             else:
                 os.environ["YOUTUBE_REDIRECT_URI"] = old_redirect_uri
+
+    def test_match_tracks_retries_once_after_rate_limit(self):
+        client = FakeYouTubeClient(
+            [
+                YouTubeRateLimitError("rate limited"),
+                YouTubeVideo("video-id", "Video", "Channel", "https://www.youtube.com/watch?v=video-id"),
+            ]
+        )
+        sleeps = []
+
+        matches = match_tracks(
+            client,
+            [_track()],
+            delay_seconds=0,
+            rate_limit_retry_seconds=65,
+            sleep=sleeps.append,
+        )
+
+        self.assertEqual(sleeps, [65])
+        self.assertEqual(matches[0].video_id, "video-id")
+
+    def test_match_tracks_delays_between_searches(self):
+        client = FakeYouTubeClient(
+            [
+                YouTubeVideo("one", "One", "Channel", "https://www.youtube.com/watch?v=one"),
+                YouTubeVideo("two", "Two", "Channel", "https://www.youtube.com/watch?v=two"),
+            ]
+        )
+        sleeps = []
+
+        match_tracks(client, [_track(1), _track(2)], delay_seconds=2, sleep=sleeps.append)
+
+        self.assertEqual(sleeps, [2])
+
+
+class FakeYouTubeClient:
+    def __init__(self, responses):
+        self.responses = list(responses)
+
+    def search_video(self, query):
+        response = self.responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+
+def _track(position=1):
+    return PlaylistTrack(
+        position=position,
+        added_at="",
+        is_local=False,
+        track_id=f"track-{position}",
+        track_name=f"Song {position}",
+        artists=("Artist",),
+        album_name="Album",
+        duration_ms=1000,
+        explicit=False,
+        release_date="2026",
+        isrc="",
+        spotify_url="",
+    )
 
 
 if __name__ == "__main__":
