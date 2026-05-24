@@ -1,5 +1,7 @@
 import os
 import unittest
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from spotify_playlister.models import PlaylistTrack
 from spotify_playlister.youtube import (
@@ -11,6 +13,8 @@ from spotify_playlister.youtube import (
     _client_config_from_env,
     _youtube_redirect,
     match_tracks,
+    next_quota_reset,
+    quota_reset_description,
 )
 
 
@@ -115,7 +119,7 @@ class YouTubeTests(unittest.TestCase):
     def test_search_video_handles_daily_quota_error(self):
         service = FakeSearchService(FakeHttpError(403, "quotaExceeded"))
 
-        with self.assertRaises(YouTubeQuotaExceededError):
+        with self.assertRaisesRegex(YouTubeQuotaExceededError, r"Daily quota resets in .* at .*"):
             YouTubeClient(service).search_video("Song Artist")
 
     def test_search_video_handles_per_minute_rate_limit_error(self):
@@ -123,6 +127,18 @@ class YouTubeTests(unittest.TestCase):
 
         with self.assertRaises(YouTubeRateLimitError):
             YouTubeClient(service).search_video("Song Artist")
+
+    def test_next_quota_reset_uses_midnight_pacific_in_local_timezone(self):
+        now = datetime(2026, 5, 24, 19, 8, tzinfo=ZoneInfo("America/New_York"))
+
+        reset = next_quota_reset(now)
+
+        self.assertEqual(reset, datetime(2026, 5, 25, 3, 0, tzinfo=ZoneInfo("America/New_York")))
+
+    def test_quota_reset_description_uses_relative_duration_and_local_time(self):
+        now = datetime(2026, 5, 24, 19, 8, tzinfo=ZoneInfo("America/New_York"))
+
+        self.assertEqual(quota_reset_description(now), "in 7hr 52min at 3:00 AM")
 
 
 class FakeYouTubeClient:

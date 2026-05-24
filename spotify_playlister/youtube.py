@@ -3,9 +3,11 @@ from __future__ import annotations
 import os
 import time
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable, Iterable
 from urllib.parse import ParseResult, urlparse
+from zoneinfo import ZoneInfo
 
 from .models import PlaylistTrack
 
@@ -13,6 +15,7 @@ YOUTUBE_SCOPES = ["https://www.googleapis.com/auth/youtube"]
 DEFAULT_YOUTUBE_REDIRECT_URI = "http://localhost:8766/"
 DEFAULT_SEARCH_DELAY_SECONDS = 2.0
 DEFAULT_RATE_LIMIT_RETRY_SECONDS = 65.0
+PACIFIC_TZ = ZoneInfo("America/Los_Angeles")
 
 
 class YouTubeError(RuntimeError):
@@ -148,7 +151,8 @@ class YouTubeClient:
                 ) from exc
             if quota_reason == "quotaExceeded":
                 raise YouTubeQuotaExceededError(
-                    "YouTube search hit the project quota limit. Wait for the YouTube Data API quota reset or increase quota in Google Cloud."
+                    f"YouTube search hit the project quota limit. Daily quota resets {quota_reset_description()}; "
+                    "or increase quota in Google Cloud."
                 ) from exc
             raise
 
@@ -271,6 +275,36 @@ def _error_details(exc: Exception) -> str:
         return content
     details = str(exc)
     return details
+
+
+def quota_reset_description(now: datetime | None = None) -> str:
+    now = now or datetime.now().astimezone()
+    reset = next_quota_reset(now)
+    return f"in {_human_duration(reset - now)} at {_format_local_time(reset)}"
+
+
+def next_quota_reset(now: datetime | None = None) -> datetime:
+    now = now or datetime.now().astimezone()
+    pacific_now = now.astimezone(PACIFIC_TZ)
+    reset = pacific_now.replace(hour=0, minute=0, second=0, microsecond=0)
+    if pacific_now >= reset:
+        reset += timedelta(days=1)
+    return reset.astimezone(now.tzinfo)
+
+
+def _human_duration(delta: timedelta) -> str:
+    total_minutes = max(0, int(delta.total_seconds() // 60))
+    hours, minutes = divmod(total_minutes, 60)
+    if hours and minutes:
+        return f"{hours}hr {minutes}min"
+    if hours:
+        return f"{hours}hr"
+    return f"{minutes}min"
+
+
+def _format_local_time(value: datetime) -> str:
+    hour = value.strftime("%I").lstrip("0") or "0"
+    return f"{hour}:{value.strftime('%M %p')}"
 
 
 def _client_config_from_env() -> dict[str, dict[str, object]]:
