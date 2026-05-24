@@ -52,6 +52,16 @@ class YouTubeTests(unittest.TestCase):
             else:
                 os.environ["YOUTUBE_REDIRECT_URI"] = old_redirect_uri
 
+    def test_set_playlist_privacy_updates_status(self):
+        service = FakeYouTubeService()
+        from spotify_playlister.youtube import YouTubeClient
+
+        privacy = YouTubeClient(service).set_playlist_privacy("playlist-id", "unlisted")
+
+        self.assertEqual(privacy, "unlisted")
+        self.assertEqual(service.update_call["part"], "id,status")
+        self.assertEqual(service.update_call["body"], {"id": "playlist-id", "status": {"privacyStatus": "unlisted"}})
+
     def test_match_tracks_retries_once_after_rate_limit(self):
         client = FakeYouTubeClient(
             [
@@ -95,6 +105,21 @@ class FakeYouTubeClient:
         if isinstance(response, Exception):
             raise response
         return response
+
+
+class FakeYouTubeService:
+    def __init__(self):
+        self.update_call = None
+
+    def playlists(self):
+        return self
+
+    def update(self, **kwargs):
+        self.update_call = kwargs
+        return self
+
+    def execute(self):
+        return {"status": {"privacyStatus": self.update_call["body"]["status"]["privacyStatus"]}}
 
 
 def _track(position=1):

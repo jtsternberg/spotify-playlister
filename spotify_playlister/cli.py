@@ -74,6 +74,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Seconds to wait before retrying once after a YouTube search rate limit. Use 0 to fail immediately.",
     )
 
+    set_privacy = subparsers.add_parser("set-youtube-privacy", help="Update an existing YouTube playlist's privacy.")
+    set_privacy.add_argument("youtube_playlist_id", help="YouTube playlist ID.")
+    set_privacy.add_argument("privacy", choices=["private", "unlisted", "public"], help="New playlist privacy.")
+    set_privacy.add_argument(
+        "--youtube-client-secrets",
+        type=Path,
+        help="Google OAuth Desktop client JSON. Defaults to YOUTUBE_CLIENT_ID/YOUTUBE_CLIENT_SECRET from .env.",
+    )
+
     return parser
 
 
@@ -92,6 +101,8 @@ def main(argv: list[str] | None = None) -> int:
             return export_youtube(spotify, args)
         if args.command == "sync-youtube":
             return sync_youtube(spotify, args)
+        if args.command == "set-youtube-privacy":
+            return set_youtube_privacy(args)
     except (SpotifyError, YouTubeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -192,6 +203,14 @@ def sync_youtube(spotify: SpotifyClient, args: argparse.Namespace) -> int:
         f"{len(result.missing)} missing match, "
         f"{len(result.matched)} cached/resolved matches."
     )
+    return 0
+
+
+def set_youtube_privacy(args: argparse.Namespace) -> int:
+    client_secrets = args.youtube_client_secrets.expanduser() if args.youtube_client_secrets else None
+    youtube = YouTubeClient.from_oauth_config(cache_dir() / "youtube-token.json", client_secrets)
+    privacy = youtube.set_playlist_privacy(args.youtube_playlist_id, args.privacy)
+    print(f"Updated https://www.youtube.com/playlist?list={args.youtube_playlist_id} to {privacy}.")
     return 0
 
 

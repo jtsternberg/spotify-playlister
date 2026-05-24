@@ -122,6 +122,14 @@ spotify-playlister sync-youtube "https://open.spotify.com/playlist/..." \
   --youtube-playlist-id "PL..."
 ```
 
+## Update YouTube Playlist Privacy
+
+Change an existing playlist to `private`, `unlisted`, or `public`:
+
+```bash
+spotify-playlister set-youtube-privacy "PL..." unlisted
+```
+
 ## Notes
 
 Spotify's playlist item endpoint is currently intended for playlists owned by or collaborative with the authenticated user. YouTube matching is search-based, so run `--dry-run` before inserting items into a playlist.

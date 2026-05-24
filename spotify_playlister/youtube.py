@@ -102,6 +102,20 @@ class YouTubeClient:
         )
         return str(response["id"])
 
+    def set_playlist_privacy(self, playlist_id: str, privacy_status: str) -> str:
+        response = (
+            self.service.playlists()
+            .update(
+                part="id,status",
+                body={
+                    "id": playlist_id,
+                    "status": {"privacyStatus": privacy_status},
+                },
+            )
+            .execute()
+        )
+        return str((response.get("status") or {}).get("privacyStatus") or privacy_status)
+
     def search_video(self, query: str) -> YouTubeVideo | None:
         try:
             response = (
