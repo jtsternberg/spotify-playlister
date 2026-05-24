@@ -139,7 +139,8 @@ class YouTubeClient:
         except Exception as exc:
             if _is_rate_limit_error(exc):
                 raise YouTubeRateLimitError(
-                    "YouTube search quota was exceeded. Wait a minute or increase --youtube-search-delay."
+                    "YouTube search quota was exceeded. If this is a daily project quota, wait for quota reset; "
+                    "if it is a per-minute limit, wait a minute or increase --youtube-search-delay."
                 ) from exc
             raise
 
@@ -240,10 +241,10 @@ def match_tracks(
 
 def _is_rate_limit_error(exc: Exception) -> bool:
     status = getattr(getattr(exc, "resp", None), "status", None)
-    if status != 429:
+    if status not in {403, 429}:
         return False
     details = str(exc)
-    return "rateLimitExceeded" in details or "quota" in details.lower()
+    return any(reason in details for reason in ("rateLimitExceeded", "quotaExceeded")) or "quota" in details.lower()
 
 
 def _client_config_from_env() -> dict[str, dict[str, object]]:

@@ -2,7 +2,7 @@ import os
 import unittest
 
 from spotify_playlister.models import PlaylistTrack
-from spotify_playlister.youtube import YouTubeError, YouTubeRateLimitError, YouTubeVideo, _client_config_from_env, _youtube_redirect, match_tracks
+from spotify_playlister.youtube import YouTubeClient, YouTubeError, YouTubeRateLimitError, YouTubeVideo, _client_config_from_env, _youtube_redirect, match_tracks
 
 
 class YouTubeTests(unittest.TestCase):
@@ -54,7 +54,6 @@ class YouTubeTests(unittest.TestCase):
 
     def test_set_playlist_privacy_updates_status(self):
         service = FakeYouTubeService()
-        from spotify_playlister.youtube import YouTubeClient
 
         privacy = YouTubeClient(service).set_playlist_privacy("playlist-id", "unlisted")
 
@@ -104,6 +103,12 @@ class YouTubeTests(unittest.TestCase):
 
         self.assertEqual(sleeps, [2])
 
+    def test_search_video_handles_daily_quota_error(self):
+        service = FakeSearchService(FakeHttpError(403, "quotaExceeded"))
+
+        with self.assertRaises(YouTubeRateLimitError):
+            YouTubeClient(service).search_video("Song Artist")
+
 
 class FakeYouTubeClient:
     def __init__(self, responses):
@@ -144,6 +149,31 @@ class FakeYouTubeService:
                 ]
             }
         return {"status": {"privacyStatus": self.update_call["body"]["status"]["privacyStatus"]}}
+
+
+class FakeSearchService:
+    def __init__(self, error):
+        self.error = error
+
+    def search(self):
+        return self
+
+    def list(self, **kwargs):
+        return self
+
+    def execute(self):
+        raise self.error
+
+
+class FakeResponse:
+    def __init__(self, status):
+        self.status = status
+
+
+class FakeHttpError(Exception):
+    def __init__(self, status, details):
+        super().__init__(details)
+        self.resp = FakeResponse(status)
 
 
 def _track(position=1):
