@@ -59,7 +59,7 @@ class YouTubeTests(unittest.TestCase):
         privacy = YouTubeClient(service).set_playlist_privacy("playlist-id", "unlisted")
 
         self.assertEqual(privacy, "unlisted")
-        self.assertEqual(service.update_call["part"], "id,status")
+        self.assertEqual(service.update_call["part"], "status")
         self.assertEqual(service.update_call["body"], {"id": "playlist-id", "status": {"privacyStatus": "unlisted"}})
 
     def test_match_tracks_retries_once_after_rate_limit(self):

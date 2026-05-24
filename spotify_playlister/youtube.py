@@ -106,7 +106,7 @@ class YouTubeClient:
         response = (
             self.service.playlists()
             .update(
-                part="id,status",
+                part="status",
                 body={
                     "id": playlist_id,
                     "status": {"privacyStatus": privacy_status},
