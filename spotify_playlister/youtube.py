@@ -96,7 +96,7 @@ class YouTubeClient:
         return cls.from_oauth_config(token_path, client_secrets)
 
     def create_playlist(self, title: str, description: str = "", privacy_status: str = "private") -> str:
-        response = (
+        response = _execute_youtube_request(
             self.service.playlists()
             .insert(
                 part="snippet,status",
@@ -105,14 +105,13 @@ class YouTubeClient:
                     "status": {"privacyStatus": privacy_status},
                 },
             )
-            .execute()
         )
         return str(response["id"])
 
     def set_playlist_privacy(self, playlist_id: str, privacy_status: str) -> str:
         playlist = self.playlist(playlist_id)
         snippet = playlist.get("snippet") or {}
-        response = (
+        response = _execute_youtube_request(
             self.service.playlists()
             .update(
                 part="snippet,status",
@@ -125,36 +124,20 @@ class YouTubeClient:
                     "status": {"privacyStatus": privacy_status},
                 },
             )
-            .execute()
         )
         return str((response.get("status") or {}).get("privacyStatus") or privacy_status)
 
     def playlist(self, playlist_id: str) -> dict:
-        response = self.service.playlists().list(part="snippet,status", id=playlist_id).execute()
+        response = _execute_youtube_request(self.service.playlists().list(part="snippet,status", id=playlist_id))
         items = response.get("items", [])
         if not items:
             raise YouTubeError(f"YouTube playlist not found: {playlist_id}")
         return items[0]
 
     def search_video(self, query: str) -> YouTubeVideo | None:
-        try:
-            response = (
-                self.service.search()
-                .list(part="snippet", q=query, type="video", maxResults=1, videoEmbeddable="true")
-                .execute()
-            )
-        except Exception as exc:
-            quota_reason = _quota_error_reason(exc)
-            if quota_reason == "rateLimitExceeded":
-                raise YouTubeRateLimitError(
-                    "YouTube search hit a per-minute rate limit. Wait a minute or increase --youtube-search-delay."
-                ) from exc
-            if quota_reason == "quotaExceeded":
-                raise YouTubeQuotaExceededError(
-                    f"YouTube search hit the project quota limit. Daily quota resets {quota_reset_description()}; "
-                    "or increase quota in Google Cloud."
-                ) from exc
-            raise
+        response = _execute_youtube_request(
+            self.service.search().list(part="snippet", q=query, type="video", maxResults=1, videoEmbeddable="true")
+        )
 
         items = response.get("items", [])
         if not items:
@@ -170,7 +153,7 @@ class YouTubeClient:
         )
 
     def add_video(self, playlist_id: str, video_id: str) -> None:
-        (
+        _execute_youtube_request(
             self.service.playlistItems()
             .insert(
                 part="snippet",
@@ -181,7 +164,6 @@ class YouTubeClient:
                     }
                 },
             )
-            .execute()
         )
 
     def playlist_items(self, playlist_id: str) -> list[YouTubePlaylistItem]:
@@ -194,7 +176,7 @@ class YouTubeClient:
                 maxResults=50,
                 pageToken=page_token,
             )
-            response = request.execute()
+            response = _execute_youtube_request(request)
             for item in response.get("items", []):
                 content_details = item.get("contentDetails") or {}
                 snippet = item.get("snippet") or {}
@@ -265,6 +247,23 @@ def _quota_error_reason(exc: Exception) -> str | None:
     if "quota" in details.lower() and status == 429:
         return "rateLimitExceeded"
     return None
+
+
+def _execute_youtube_request(request):
+    try:
+        return request.execute()
+    except Exception as exc:
+        quota_reason = _quota_error_reason(exc)
+        if quota_reason == "rateLimitExceeded":
+            raise YouTubeRateLimitError(
+                "YouTube API hit a per-minute rate limit. Wait a minute or increase --youtube-search-delay."
+            ) from exc
+        if quota_reason == "quotaExceeded":
+            raise YouTubeQuotaExceededError(
+                f"YouTube API hit the project quota limit. Daily quota resets {quota_reset_description()}; "
+                "or increase quota in Google Cloud."
+            ) from exc
+        raise
 
 
 def _error_details(exc: Exception) -> str:

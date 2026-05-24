@@ -128,6 +128,12 @@ class YouTubeTests(unittest.TestCase):
         with self.assertRaises(YouTubeRateLimitError):
             YouTubeClient(service).search_video("Song Artist")
 
+    def test_playlist_items_handles_daily_quota_error(self):
+        service = FakePlaylistItemsService(FakeHttpError(403, "quotaExceeded"))
+
+        with self.assertRaisesRegex(YouTubeQuotaExceededError, r"Daily quota resets in .* at .*"):
+            YouTubeClient(service).playlist_items("playlist-id")
+
     def test_next_quota_reset_uses_midnight_pacific_in_local_timezone(self):
         now = datetime(2026, 5, 24, 19, 8, tzinfo=ZoneInfo("America/New_York"))
 
@@ -187,6 +193,20 @@ class FakeSearchService:
         self.error = error
 
     def search(self):
+        return self
+
+    def list(self, **kwargs):
+        return self
+
+    def execute(self):
+        raise self.error
+
+
+class FakePlaylistItemsService:
+    def __init__(self, error):
+        self.error = error
+
+    def playlistItems(self):
         return self
 
     def list(self, **kwargs):
