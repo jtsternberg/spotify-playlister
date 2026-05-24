@@ -13,7 +13,9 @@ http://127.0.0.1:8765/callback
 Install the CLI:
 
 ```bash
-python3 -m pip install -e .
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
 ```
 
 Create a local `.env` file:
@@ -55,7 +57,8 @@ The CSV includes:
 Install YouTube support:
 
 ```bash
-python3 -m pip install -e '.[youtube]'
+source .venv/bin/activate
+python -m pip install -e '.[youtube]'
 ```
 
 Create an OAuth Desktop app in Google Cloud with the YouTube Data API enabled. You can either download the OAuth client JSON or put the client values in `.env`:
