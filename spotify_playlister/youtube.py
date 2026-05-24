@@ -4,10 +4,12 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
+from urllib.parse import ParseResult, urlparse
 
 from .models import PlaylistTrack
 
 YOUTUBE_SCOPES = ["https://www.googleapis.com/auth/youtube"]
+DEFAULT_YOUTUBE_REDIRECT_URI = "http://localhost:8766/"
 
 
 class YouTubeError(RuntimeError):
@@ -56,7 +58,12 @@ class YouTubeClient:
                     flow = InstalledAppFlow.from_client_secrets_file(str(client_secrets), YOUTUBE_SCOPES)
                 else:
                     flow = InstalledAppFlow.from_client_config(_client_config_from_env(), YOUTUBE_SCOPES)
-                credentials = flow.run_local_server(port=0)
+                redirect = _youtube_redirect()
+                credentials = flow.run_local_server(
+                    host=redirect.hostname or "localhost",
+                    port=redirect.port or 8766,
+                    redirect_uri_trailing_slash=redirect.path.endswith("/"),
+                )
             token_path.parent.mkdir(parents=True, exist_ok=True)
             token_path.write_text(credentials.to_json(), encoding="utf-8")
             token_path.chmod(0o600)
@@ -147,6 +154,18 @@ def _client_config_from_env() -> dict[str, dict[str, object]]:
             "client_secret": client_secret,
             "auth_uri": os.environ.get("YOUTUBE_AUTH_URI", "https://accounts.google.com/o/oauth2/auth"),
             "token_uri": os.environ.get("YOUTUBE_TOKEN_URI", "https://oauth2.googleapis.com/token"),
-            "redirect_uris": ["http://localhost"],
+            "redirect_uris": [os.environ.get("YOUTUBE_REDIRECT_URI", DEFAULT_YOUTUBE_REDIRECT_URI)],
         }
     }
+
+
+def _youtube_redirect() -> ParseResult:
+    redirect_uri = os.environ.get("YOUTUBE_REDIRECT_URI", DEFAULT_YOUTUBE_REDIRECT_URI)
+    redirect = urlparse(redirect_uri)
+    if redirect.scheme != "http" or not redirect.hostname:
+        raise YouTubeError("YOUTUBE_REDIRECT_URI must be an http localhost URI, for example http://localhost:8766/.")
+    if redirect.hostname not in {"localhost", "127.0.0.1"}:
+        raise YouTubeError("YOUTUBE_REDIRECT_URI must use localhost or 127.0.0.1.")
+    if redirect.path not in {"", "/"}:
+        raise YouTubeError("YOUTUBE_REDIRECT_URI must use the root path, for example http://localhost:8766/.")
+    return redirect

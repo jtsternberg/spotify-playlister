@@ -61,11 +61,18 @@ source .venv/bin/activate
 python -m pip install -e '.[youtube]'
 ```
 
-Create an OAuth Desktop app in Google Cloud with the YouTube Data API enabled. You can either download the OAuth client JSON or put the client values in `.env`:
+Create an OAuth client in Google Cloud with the YouTube Data API enabled. If you use a Web application client, add this exact Authorized redirect URI:
+
+```text
+http://localhost:8766/
+```
+
+You can either download the OAuth client JSON or put the client values in `.env`:
 
 ```bash
 YOUTUBE_CLIENT_ID="your-google-oauth-client-id"
 YOUTUBE_CLIENT_SECRET="your-google-oauth-client-secret"
+YOUTUBE_REDIRECT_URI="http://localhost:8766/"
 ```
 
 Run a dry run first:
