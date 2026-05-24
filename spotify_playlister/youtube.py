@@ -40,6 +40,13 @@ class YouTubeMatch:
     url: str
 
 
+@dataclass(frozen=True)
+class YouTubePlaylistItem:
+    playlist_item_id: str
+    video_id: str
+    title: str
+
+
 class YouTubeClient:
     def __init__(self, service: object) -> None:
         self.service = service
@@ -136,6 +143,37 @@ class YouTubeClient:
             )
             .execute()
         )
+
+    def playlist_items(self, playlist_id: str) -> list[YouTubePlaylistItem]:
+        items: list[YouTubePlaylistItem] = []
+        page_token = None
+        while True:
+            request = self.service.playlistItems().list(
+                part="snippet,contentDetails",
+                playlistId=playlist_id,
+                maxResults=50,
+                pageToken=page_token,
+            )
+            response = request.execute()
+            for item in response.get("items", []):
+                content_details = item.get("contentDetails") or {}
+                snippet = item.get("snippet") or {}
+                video_id = content_details.get("videoId") or (snippet.get("resourceId") or {}).get("videoId")
+                if not video_id:
+                    continue
+                items.append(
+                    YouTubePlaylistItem(
+                        playlist_item_id=item.get("id", ""),
+                        video_id=video_id,
+                        title=snippet.get("title", ""),
+                    )
+                )
+            page_token = response.get("nextPageToken")
+            if not page_token:
+                return items
+
+    def playlist_video_ids(self, playlist_id: str) -> set[str]:
+        return {item.video_id for item in self.playlist_items(playlist_id)}
 
 
 def match_tracks(

@@ -7,6 +7,7 @@ from pathlib import Path
 from .csv_export import write_tracks_csv
 from .env import load_env
 from .spotify import SpotifyClient, SpotifyError, cache_dir, extract_playlist_id
+from .sync import MatchStore, sync_playlist
 from .youtube import DEFAULT_RATE_LIMIT_RETRY_SECONDS, DEFAULT_SEARCH_DELAY_SECONDS, YouTubeClient, YouTubeError, match_tracks
 
 
@@ -45,6 +46,34 @@ def build_parser() -> argparse.ArgumentParser:
         help="Seconds to wait before retrying once after a YouTube search rate limit. Use 0 to fail immediately.",
     )
 
+    sync_youtube = subparsers.add_parser("sync-youtube", help="Sync missing Spotify tracks into an existing YouTube playlist.")
+    sync_youtube.add_argument("playlist", help="Spotify playlist ID, URI, or open.spotify.com playlist URL.")
+    sync_youtube.add_argument("--youtube-playlist-id", required=True, help="Existing YouTube playlist ID to sync into.")
+    sync_youtube.add_argument(
+        "--youtube-client-secrets",
+        type=Path,
+        help="Google OAuth Desktop client JSON. Defaults to YOUTUBE_CLIENT_ID/YOUTUBE_CLIENT_SECRET from .env.",
+    )
+    sync_youtube.add_argument("--dry-run", action="store_true", help="Resolve matches and show changes without adding videos.")
+    sync_youtube.add_argument(
+        "--sync-db",
+        type=Path,
+        default=cache_dir() / "sync.sqlite",
+        help="SQLite database used to cache Spotify-to-YouTube matches. Defaults to %(default)s.",
+    )
+    sync_youtube.add_argument(
+        "--youtube-search-delay",
+        type=float,
+        default=DEFAULT_SEARCH_DELAY_SECONDS,
+        help="Seconds to wait between uncached YouTube search requests. Defaults to %(default)s.",
+    )
+    sync_youtube.add_argument(
+        "--youtube-rate-limit-retry",
+        type=float,
+        default=DEFAULT_RATE_LIMIT_RETRY_SECONDS,
+        help="Seconds to wait before retrying once after a YouTube search rate limit. Use 0 to fail immediately.",
+    )
+
     return parser
 
 
@@ -61,6 +90,8 @@ def main(argv: list[str] | None = None) -> int:
             return export_csv(spotify, args)
         if args.command == "export-youtube":
             return export_youtube(spotify, args)
+        if args.command == "sync-youtube":
+            return sync_youtube(spotify, args)
     except (SpotifyError, YouTubeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -123,6 +154,44 @@ def export_youtube(spotify: SpotifyClient, args: argparse.Namespace) -> int:
         print(f"Added {match.video_id}")
 
     print(f"Added {len(matches)} videos to https://www.youtube.com/playlist?list={youtube_playlist_id}")
+    return 0
+
+
+def sync_youtube(spotify: SpotifyClient, args: argparse.Namespace) -> int:
+    playlist_id = extract_playlist_id(args.playlist)
+    tracks = spotify.playlist_tracks(playlist_id)
+    client_secrets = args.youtube_client_secrets.expanduser() if args.youtube_client_secrets else None
+    youtube = YouTubeClient.from_oauth_config(cache_dir() / "youtube-token.json", client_secrets)
+    store = MatchStore(args.sync_db.expanduser())
+    try:
+        result = sync_playlist(
+            youtube,
+            tracks,
+            args.youtube_playlist_id,
+            store,
+            dry_run=args.dry_run,
+            delay_seconds=args.youtube_search_delay,
+            rate_limit_retry_seconds=args.youtube_rate_limit_retry,
+            on_progress=lambda message: print(message, file=sys.stderr),
+        )
+    finally:
+        store.close()
+
+    action = "Would add" if args.dry_run else "Added"
+    for match in result.added:
+        print(f"{action}: {match.track.position}. {match.track.artists_text} - {match.track.track_name}")
+        print(f"   {match.title} | {match.channel} | {match.url}")
+
+    if result.missing:
+        print(f"Skipped {len(result.missing)} tracks with no YouTube search result.", file=sys.stderr)
+
+    print(
+        f"Sync {'dry run ' if args.dry_run else ''}complete. "
+        f"{len(result.added)} {'would be added' if args.dry_run else 'added'}, "
+        f"{len(result.already_present)} already present, "
+        f"{len(result.missing)} missing match, "
+        f"{len(result.matched)} cached/resolved matches."
+    )
     return 0
 
 

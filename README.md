@@ -105,6 +105,23 @@ spotify-playlister export-youtube "spotify:playlist:..." \
 
 If you prefer the downloaded JSON file instead of `.env`, add `--youtube-client-secrets ~/Downloads/client_secret.json`.
 
+## Sync To An Existing YouTube Playlist
+
+For playlists that already exist in both Spotify and YouTube, sync missing Spotify tracks into the YouTube playlist:
+
+```bash
+spotify-playlister sync-youtube "https://open.spotify.com/playlist/..." \
+  --youtube-playlist-id "PL..." \
+  --dry-run
+```
+
+The sync command keeps a SQLite cache at `~/.spotify-playlister/sync.sqlite` so later runs can reuse Spotify-to-YouTube matches instead of searching again. When the dry run looks right, run without `--dry-run`:
+
+```bash
+spotify-playlister sync-youtube "https://open.spotify.com/playlist/..." \
+  --youtube-playlist-id "PL..."
+```
+
 ## Notes
 
 Spotify's playlist item endpoint is currently intended for playlists owned by or collaborative with the authenticated user. YouTube matching is search-based, so run `--dry-run` before inserting items into a playlist.

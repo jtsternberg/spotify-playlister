@@ -4,6 +4,8 @@ __pycache__/
 *.egg-info/
 .spotify-playlister/
 *.csv
+*.sqlite
+*.sqlite-*
 .env
 .env.*
 !.env.example
