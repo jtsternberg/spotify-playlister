@@ -59,8 +59,17 @@ class YouTubeTests(unittest.TestCase):
         privacy = YouTubeClient(service).set_playlist_privacy("playlist-id", "unlisted")
 
         self.assertEqual(privacy, "unlisted")
-        self.assertEqual(service.update_call["part"], "status")
-        self.assertEqual(service.update_call["body"], {"id": "playlist-id", "status": {"privacyStatus": "unlisted"}})
+        self.assertEqual(service.list_call["part"], "snippet,status")
+        self.assertEqual(service.list_call["id"], "playlist-id")
+        self.assertEqual(service.update_call["part"], "snippet,status")
+        self.assertEqual(
+            service.update_call["body"],
+            {
+                "id": "playlist-id",
+                "snippet": {"title": "Existing title", "description": "Existing description"},
+                "status": {"privacyStatus": "unlisted"},
+            },
+        )
 
     def test_match_tracks_retries_once_after_rate_limit(self):
         client = FakeYouTubeClient(
@@ -109,9 +118,14 @@ class FakeYouTubeClient:
 
 class FakeYouTubeService:
     def __init__(self):
+        self.list_call = None
         self.update_call = None
 
     def playlists(self):
+        return self
+
+    def list(self, **kwargs):
+        self.list_call = kwargs
         return self
 
     def update(self, **kwargs):
@@ -119,6 +133,16 @@ class FakeYouTubeService:
         return self
 
     def execute(self):
+        if self.update_call is None:
+            return {
+                "items": [
+                    {
+                        "id": self.list_call["id"],
+                        "snippet": {"title": "Existing title", "description": "Existing description"},
+                        "status": {"privacyStatus": "private"},
+                    }
+                ]
+            }
         return {"status": {"privacyStatus": self.update_call["body"]["status"]["privacyStatus"]}}
 
 

@@ -103,18 +103,31 @@ class YouTubeClient:
         return str(response["id"])
 
     def set_playlist_privacy(self, playlist_id: str, privacy_status: str) -> str:
+        playlist = self.playlist(playlist_id)
+        snippet = playlist.get("snippet") or {}
         response = (
             self.service.playlists()
             .update(
-                part="status",
+                part="snippet,status",
                 body={
                     "id": playlist_id,
+                    "snippet": {
+                        "title": snippet.get("title", "Spotify playlist"),
+                        "description": snippet.get("description", ""),
+                    },
                     "status": {"privacyStatus": privacy_status},
                 },
             )
             .execute()
         )
         return str((response.get("status") or {}).get("privacyStatus") or privacy_status)
+
+    def playlist(self, playlist_id: str) -> dict:
+        response = self.service.playlists().list(part="snippet,status", id=playlist_id).execute()
+        items = response.get("items", [])
+        if not items:
+            raise YouTubeError(f"YouTube playlist not found: {playlist_id}")
+        return items[0]
 
     def search_video(self, query: str) -> YouTubeVideo | None:
         try:
