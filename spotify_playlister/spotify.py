@@ -195,7 +195,7 @@ class SpotifyClient:
                 continue
             try:
                 _json_request(
-                    f"{API_BASE}/playlists/{playlist_id}/tracks",
+                    f"{API_BASE}/playlists/{playlist_id}/items",
                     method="POST",
                     headers=headers,
                     json_data={"uris": [f"spotify:track:{track_id}" for track_id in chunk]},

@@ -98,6 +98,16 @@ class SpotifyTests(unittest.TestCase):
             with self.assertRaisesRegex(SpotifyError, "Spotify refused to add tracks"):
                 client.add_tracks("playlist-id", ["track-id"])
 
+    def test_add_tracks_uses_current_playlist_items_endpoint(self):
+        client = SpotifyClient("client-id")
+
+        with patch.object(client, "access_token", return_value="token"), patch("spotify_playlister.spotify._json_request") as request:
+            client.add_tracks("playlist-id", ["track-id"])
+
+        request.assert_called_once()
+        self.assertEqual(request.call_args.args[0], "https://api.spotify.com/v1/playlists/playlist-id/items")
+        self.assertEqual(request.call_args.kwargs["json_data"], {"uris": ["spotify:track:track-id"]})
+
 
 if __name__ == "__main__":
     unittest.main()
