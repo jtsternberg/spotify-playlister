@@ -115,12 +115,41 @@ For playlists that already exist in both Spotify and YouTube, sync missing Spoti
   --dry-run
 ```
 
+This default is one-way from Spotify to YouTube. You can make the direction explicit:
+
+```bash
+.venv/bin/spotify-playlister sync-youtube "https://open.spotify.com/playlist/..." \
+  --youtube-playlist-id "PL..." \
+  --from-spotify \
+  --dry-run
+```
+
+To add YouTube playlist items missing from Spotify, use `--from-youtube`:
+
+```bash
+.venv/bin/spotify-playlister sync-youtube "https://open.spotify.com/playlist/..." \
+  --youtube-playlist-id "PL..." \
+  --from-youtube \
+  --dry-run
+```
+
+To add missing tracks in both directions, use `--both`:
+
+```bash
+.venv/bin/spotify-playlister sync-youtube "https://open.spotify.com/playlist/..." \
+  --youtube-playlist-id "PL..." \
+  --both \
+  --dry-run
+```
+
 The sync command keeps a SQLite cache at `~/.spotify-playlister/sync.sqlite` so later runs can reuse Spotify-to-YouTube matches instead of searching again. When the dry run looks right, run without `--dry-run`:
 
 ```bash
 .venv/bin/spotify-playlister sync-youtube "https://open.spotify.com/playlist/..." \
   --youtube-playlist-id "PL..."
 ```
+
+YouTube-to-Spotify sync uses cached mappings when available and falls back to Spotify search from the YouTube video title. Review `--dry-run` output before applying it.
 
 ## Update YouTube Playlist Privacy
 

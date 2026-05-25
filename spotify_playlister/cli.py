@@ -7,7 +7,7 @@ from pathlib import Path
 from .csv_export import write_tracks_csv
 from .env import load_env
 from .spotify import SpotifyClient, SpotifyError, cache_dir, extract_playlist_id
-from .sync import MatchStore, sync_playlist
+from .sync import MatchStore, sync_playlist, sync_spotify_from_youtube
 from .youtube import DEFAULT_RATE_LIMIT_RETRY_SECONDS, DEFAULT_SEARCH_DELAY_SECONDS, YouTubeClient, YouTubeError, match_tracks
 
 
@@ -54,7 +54,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Google OAuth Desktop client JSON. Defaults to YOUTUBE_CLIENT_ID/YOUTUBE_CLIENT_SECRET from .env.",
     )
-    sync_youtube.add_argument("--dry-run", action="store_true", help="Resolve matches and show changes without adding videos.")
+    sync_youtube.add_argument("--dry-run", action="store_true", help="Resolve matches and show changes without applying them.")
     sync_youtube.add_argument(
         "--sync-db",
         type=Path,
@@ -73,6 +73,29 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_RATE_LIMIT_RETRY_SECONDS,
         help="Seconds to wait before retrying once after a YouTube search rate limit. Use 0 to fail immediately.",
     )
+    sync_direction = sync_youtube.add_mutually_exclusive_group()
+    sync_direction.add_argument(
+        "--from-spotify",
+        action="store_const",
+        const="from_spotify",
+        dest="sync_direction",
+        help="Add Spotify tracks missing from the YouTube playlist. This is the default.",
+    )
+    sync_direction.add_argument(
+        "--from-youtube",
+        action="store_const",
+        const="from_youtube",
+        dest="sync_direction",
+        help="Add YouTube playlist items missing from the Spotify playlist.",
+    )
+    sync_direction.add_argument(
+        "--both",
+        action="store_const",
+        const="both",
+        dest="sync_direction",
+        help="Add missing tracks in both directions. Does not delete anything.",
+    )
+    sync_youtube.set_defaults(sync_direction="from_spotify")
 
     set_privacy = subparsers.add_parser("set-youtube-privacy", help="Update an existing YouTube playlist's privacy.")
     set_privacy.add_argument("youtube_playlist_id", help="YouTube playlist ID.")
@@ -173,25 +196,45 @@ def export_youtube(spotify: SpotifyClient, args: argparse.Namespace) -> int:
 
 def sync_youtube(spotify: SpotifyClient, args: argparse.Namespace) -> int:
     playlist_id = extract_playlist_id(args.playlist)
-    tracks = spotify.playlist_tracks(playlist_id)
+    tracks = None
     client_secrets = args.youtube_client_secrets.expanduser() if args.youtube_client_secrets else None
     youtube = YouTubeClient.from_oauth_config(cache_dir() / "youtube-token.json", client_secrets)
     store = MatchStore(args.sync_db.expanduser())
     try:
-        result = sync_playlist(
-            youtube,
-            tracks,
-            args.youtube_playlist_id,
-            store,
-            dry_run=args.dry_run,
-            delay_seconds=args.youtube_search_delay,
-            rate_limit_retry_seconds=args.youtube_rate_limit_retry,
-            on_progress=lambda message: print(message, file=sys.stderr),
-        )
+        if args.sync_direction in {"from_spotify", "both"}:
+            tracks = spotify.playlist_tracks(playlist_id)
+            result = sync_playlist(
+                youtube,
+                tracks,
+                args.youtube_playlist_id,
+                store,
+                dry_run=args.dry_run,
+                delay_seconds=args.youtube_search_delay,
+                rate_limit_retry_seconds=args.youtube_rate_limit_retry,
+                on_progress=lambda message: print(message, file=sys.stderr),
+            )
+            print_youtube_sync_result(result, args.dry_run)
+
+        if args.sync_direction in {"from_youtube", "both"}:
+            result = sync_spotify_from_youtube(
+                spotify,
+                youtube,
+                playlist_id,
+                args.youtube_playlist_id,
+                store,
+                dry_run=args.dry_run,
+                spotify_tracks=tracks,
+                on_progress=lambda message: print(message, file=sys.stderr),
+            )
+            print_spotify_sync_result(result, args.dry_run)
     finally:
         store.close()
 
-    action = "Would add" if args.dry_run else "Added"
+    return 0
+
+
+def print_youtube_sync_result(result, dry_run: bool) -> None:
+    action = "Would add" if dry_run else "Added"
     for match in result.added:
         print(f"{action}: {match.track.position}. {match.track.artists_text} - {match.track.track_name}")
         print(f"   {match.title} | {match.channel} | {match.url}")
@@ -200,13 +243,30 @@ def sync_youtube(spotify: SpotifyClient, args: argparse.Namespace) -> int:
         print(f"Skipped {len(result.missing)} tracks with no YouTube search result.", file=sys.stderr)
 
     print(
-        f"Sync {'dry run ' if args.dry_run else ''}complete. "
-        f"{len(result.added)} {'would be added' if args.dry_run else 'added'}, "
+        f"YouTube sync {'dry run ' if dry_run else ''}complete. "
+        f"{len(result.added)} {'would be added' if dry_run else 'added'}, "
         f"{len(result.already_present)} already present, "
         f"{len(result.missing)} missing match, "
         f"{len(result.matched)} cached/resolved matches."
     )
-    return 0
+
+
+def print_spotify_sync_result(result, dry_run: bool) -> None:
+    action = "Would add to Spotify" if dry_run else "Added to Spotify"
+    for match in result.added:
+        print(f"{action}: {match.title}")
+        print(f"   {match.track.artists_text} - {match.track.track_name} | {match.track.spotify_url}")
+
+    if result.missing:
+        print(f"Skipped {len(result.missing)} YouTube videos with no Spotify search result.", file=sys.stderr)
+
+    print(
+        f"Spotify sync {'dry run ' if dry_run else ''}complete. "
+        f"{len(result.added)} {'would be added' if dry_run else 'added'}, "
+        f"{len(result.already_present)} already present, "
+        f"{len(result.missing)} missing match, "
+        f"{len(result.matched)} cached/resolved matches."
+    )
 
 
 def set_youtube_privacy(args: argparse.Namespace) -> int:

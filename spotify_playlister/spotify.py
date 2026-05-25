@@ -19,7 +19,7 @@ AUTH_URL = "https://accounts.spotify.com/authorize"
 TOKEN_URL = "https://accounts.spotify.com/api/token"
 API_BASE = "https://api.spotify.com/v1"
 DEFAULT_REDIRECT_URI = "http://127.0.0.1:8765/callback"
-DEFAULT_SCOPES = "playlist-read-private playlist-read-collaborative"
+DEFAULT_SCOPES = "playlist-read-private playlist-read-collaborative playlist-modify-private playlist-modify-public"
 
 
 class SpotifyError(RuntimeError):
@@ -49,12 +49,22 @@ def _urlsafe_b64(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).decode("ascii").rstrip("=")
 
 
-def _json_request(url: str, *, method: str = "GET", headers: dict[str, str] | None = None, data: dict[str, str] | None = None) -> dict[str, Any]:
+def _json_request(
+    url: str,
+    *,
+    method: str = "GET",
+    headers: dict[str, str] | None = None,
+    data: dict[str, str] | None = None,
+    json_data: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     body = None
     request_headers = dict(headers or {})
     if data is not None:
         body = urllib.parse.urlencode(data).encode("utf-8")
         request_headers["Content-Type"] = "application/x-www-form-urlencoded"
+    if json_data is not None:
+        body = json.dumps(json_data).encode("utf-8")
+        request_headers["Content-Type"] = "application/json"
 
     request = urllib.request.Request(url, method=method, headers=request_headers, data=body)
     try:
@@ -141,11 +151,39 @@ class SpotifyClient:
             url = payload.get("next")
         return tracks
 
+    def search_tracks(self, query: str, limit: int = 1) -> list[PlaylistTrack]:
+        params = urllib.parse.urlencode({"q": query, "type": "track", "limit": limit})
+        payload = self.get(f"{API_BASE}/search?{params}")
+        items = ((payload.get("tracks") or {}).get("items") or [])
+        tracks: list[PlaylistTrack] = []
+        for item in items:
+            track = parse_spotify_track(item, len(tracks) + 1)
+            if track:
+                tracks.append(track)
+        return tracks
+
+    def add_tracks(self, playlist_id: str, track_ids: list[str]) -> None:
+        headers = {"Authorization": f"Bearer {self.access_token()}"}
+        for index in range(0, len(track_ids), 100):
+            chunk = [track_id for track_id in track_ids[index : index + 100] if track_id]
+            if not chunk:
+                continue
+            _json_request(
+                f"{API_BASE}/playlists/{playlist_id}/tracks",
+                method="POST",
+                headers=headers,
+                json_data={"uris": [f"spotify:track:{track_id}" for track_id in chunk]},
+            )
+
     def get(self, url: str) -> dict[str, Any]:
         return _json_request(url, headers={"Authorization": f"Bearer {self.access_token()}"})
 
     def access_token(self) -> str:
         token = self._load_token()
+        if token and not self._has_required_scopes(token):
+            self._token = self._authorize()
+            self._save_token(self._token)
+            return str(self._token["access_token"])
         if token and token.get("expires_at", 0) > time.time() + 60:
             return str(token["access_token"])
         if token and token.get("refresh_token"):
@@ -155,6 +193,11 @@ class SpotifyClient:
         self._token = self._authorize()
         self._save_token(self._token)
         return str(self._token["access_token"])
+
+    def _has_required_scopes(self, token: dict[str, Any]) -> bool:
+        granted = set(str(token.get("scope", "")).split())
+        required = set(self.scopes.split())
+        return required.issubset(granted)
 
     def _load_token(self) -> dict[str, Any] | None:
         if self._token:
@@ -236,14 +279,26 @@ def parse_playlist_item(item: dict[str, Any], position: int) -> PlaylistTrack | 
     if not track or track.get("type") != "track":
         return None
 
+    return parse_spotify_track(
+        track,
+        position,
+        added_at=item.get("added_at") or "",
+        is_local=bool(item.get("is_local") or track.get("is_local")),
+    )
+
+
+def parse_spotify_track(track: dict[str, Any], position: int, added_at: str = "", is_local: bool | None = None) -> PlaylistTrack | None:
+    if not track or track.get("type") != "track":
+        return None
+
     album = track.get("album") or {}
     artists = tuple(artist.get("name", "") for artist in track.get("artists", []) if artist.get("name"))
     external_urls = track.get("external_urls") or {}
     external_ids = track.get("external_ids") or {}
     return PlaylistTrack(
         position=position,
-        added_at=item.get("added_at") or "",
-        is_local=bool(item.get("is_local") or track.get("is_local")),
+        added_at=added_at,
+        is_local=bool(track.get("is_local")) if is_local is None else is_local,
         track_id=track.get("id") or "",
         track_name=track.get("name") or "",
         artists=artists,
