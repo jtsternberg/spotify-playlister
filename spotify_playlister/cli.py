@@ -56,6 +56,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sync_youtube.add_argument("--dry-run", action="store_true", help="Resolve matches and show changes without applying them.")
     sync_youtube.add_argument(
+        "--spotify-search-uncached",
+        action="store_true",
+        help="For --from-youtube/--both, search Spotify for YouTube videos that are not already in the sync cache. This can make bad guesses.",
+    )
+    sync_youtube.add_argument(
         "--sync-db",
         type=Path,
         default=cache_dir() / "sync.sqlite",
@@ -227,6 +232,7 @@ def sync_youtube(spotify: SpotifyClient, args: argparse.Namespace) -> int:
                 store,
                 dry_run=args.dry_run,
                 spotify_tracks=tracks,
+                allow_spotify_search=args.spotify_search_uncached,
                 on_progress=lambda message: print(message, file=sys.stderr),
             )
             print_spotify_sync_result(result, args.dry_run)

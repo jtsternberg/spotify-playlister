@@ -217,6 +217,7 @@ def sync_spotify_from_youtube(
     *,
     dry_run: bool,
     spotify_tracks: list[PlaylistTrack] | None = None,
+    allow_spotify_search: bool = False,
     on_progress: Callable[[str], None] | None = None,
 ) -> SpotifySyncResult:
     spotify_tracks = spotify_tracks if spotify_tracks is not None else spotify.playlist_tracks(spotify_playlist_id)
@@ -234,6 +235,10 @@ def sync_spotify_from_youtube(
             if not match.track.track_id:
                 match = None
         if not match:
+            if not allow_spotify_search:
+                _progress(on_progress, f"Skipping uncached YouTube item {index}. {item.title}")
+                missing.append(item)
+                continue
             _progress(on_progress, f"Searching Spotify for {index}. {item.title}")
             candidates = spotify.search_tracks(item.title, limit=1)
             if not candidates:

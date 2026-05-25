@@ -133,6 +133,16 @@ To add YouTube playlist items missing from Spotify, use `--from-youtube`:
   --dry-run
 ```
 
+By default, YouTube-to-Spotify sync only uses cached mappings. This avoids adding bad Spotify guesses from unrelated YouTube videos. To allow Spotify search for uncached YouTube videos, opt in explicitly:
+
+```bash
+.venv/bin/spotify-playlister sync-youtube "https://open.spotify.com/playlist/..." \
+  --youtube-playlist-id "PL..." \
+  --from-youtube \
+  --spotify-search-uncached \
+  --dry-run
+```
+
 To add missing tracks in both directions, use `--both`:
 
 ```bash
@@ -149,7 +159,7 @@ The sync command keeps a SQLite cache at `~/.spotify-playlister/sync.sqlite` so 
   --youtube-playlist-id "PL..."
 ```
 
-YouTube-to-Spotify sync uses cached mappings when available and falls back to Spotify search from the YouTube video title. Review `--dry-run` output before applying it.
+YouTube-to-Spotify sync uses cached mappings when available. With `--spotify-search-uncached`, it falls back to Spotify search from the YouTube video title. Review `--dry-run` output before applying searched matches.
 
 ## Update YouTube Playlist Privacy
 

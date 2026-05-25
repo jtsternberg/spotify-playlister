@@ -113,13 +113,37 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(spotify.added, [("spotify-playlist", ["spotify-id"])])
         self.assertEqual(len(result.added), 1)
 
-    def test_sync_spotify_from_youtube_searches_uncached_item(self):
+    def test_sync_spotify_from_youtube_skips_uncached_item_by_default(self):
         with tempfile.TemporaryDirectory() as tempdir:
             store = MatchStore(Path(tempdir) / "sync.sqlite")
             spotify = FakeSpotifyClient(existing_tracks=[], search_results=[_track(track_id="spotify-id")])
             youtube = FakeYouTubePlaylistClient([YouTubePlaylistItem("item-id", "video-id", "Video title")])
 
             result = sync_spotify_from_youtube(spotify, youtube, "spotify-playlist", "youtube-playlist", store, dry_run=True)
+            cached = store.get_by_youtube_video_id("video-id")
+            store.close()
+
+        self.assertEqual(spotify.searches, [])
+        self.assertEqual(spotify.added, [])
+        self.assertEqual(len(result.added), 0)
+        self.assertEqual(len(result.missing), 1)
+        self.assertIsNone(cached)
+
+    def test_sync_spotify_from_youtube_searches_uncached_item_when_enabled(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            store = MatchStore(Path(tempdir) / "sync.sqlite")
+            spotify = FakeSpotifyClient(existing_tracks=[], search_results=[_track(track_id="spotify-id")])
+            youtube = FakeYouTubePlaylistClient([YouTubePlaylistItem("item-id", "video-id", "Video title")])
+
+            result = sync_spotify_from_youtube(
+                spotify,
+                youtube,
+                "spotify-playlist",
+                "youtube-playlist",
+                store,
+                dry_run=True,
+                allow_spotify_search=True,
+            )
             cached = store.get_by_youtube_video_id("video-id")
             store.close()
 
