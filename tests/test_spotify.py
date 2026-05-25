@@ -1,6 +1,7 @@
 import unittest
+from unittest.mock import patch
 
-from spotify_playlister.spotify import SpotifyClient, extract_playlist_id, parse_playlist_item, parse_spotify_track
+from spotify_playlister.spotify import SpotifyApiError, SpotifyClient, SpotifyError, extract_playlist_id, parse_playlist_item, parse_spotify_track
 
 
 class SpotifyTests(unittest.TestCase):
@@ -60,6 +61,42 @@ class SpotifyTests(unittest.TestCase):
 
         self.assertTrue(client._has_required_scopes({"scope": "playlist-read-private playlist-modify-private"}))
         self.assertFalse(client._has_required_scopes({"scope": "playlist-read-private"}))
+
+    def test_ensure_playlist_writable_allows_owned_playlist(self):
+        client = SpotifyClient("client-id")
+
+        with patch.object(client, "playlist", return_value={"owner": {"id": "me"}, "collaborative": False}), patch.object(
+            client, "current_user_id", return_value="me"
+        ):
+            client.ensure_playlist_writable("playlist-id")
+
+    def test_ensure_playlist_writable_allows_collaborative_playlist(self):
+        client = SpotifyClient("client-id")
+
+        with patch.object(client, "playlist", return_value={"owner": {"id": "someone-else"}, "collaborative": True}), patch.object(
+            client, "current_user_id", return_value="me"
+        ):
+            client.ensure_playlist_writable("playlist-id")
+
+    def test_ensure_playlist_writable_rejects_unmodifiable_playlist(self):
+        client = SpotifyClient("client-id")
+
+        with patch.object(
+            client,
+            "playlist",
+            return_value={"name": "Their Playlist", "owner": {"id": "someone-else", "display_name": "Other User"}, "collaborative": False},
+        ), patch.object(client, "current_user_id", return_value="me"):
+            with self.assertRaisesRegex(SpotifyError, "owned by Other User"):
+                client.ensure_playlist_writable("playlist-id")
+
+    def test_add_tracks_wraps_forbidden_error(self):
+        client = SpotifyClient("client-id")
+
+        with patch.object(client, "access_token", return_value="token"), patch("spotify_playlister.spotify._json_request") as request:
+            request.side_effect = SpotifyApiError(403, '{"error": {"status": 403}}')
+
+            with self.assertRaisesRegex(SpotifyError, "Spotify refused to add tracks"):
+                client.add_tracks("playlist-id", ["track-id"])
 
 
 if __name__ == "__main__":

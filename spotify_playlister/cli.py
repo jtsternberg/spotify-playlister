@@ -201,6 +201,9 @@ def sync_youtube(spotify: SpotifyClient, args: argparse.Namespace) -> int:
     youtube = YouTubeClient.from_oauth_config(cache_dir() / "youtube-token.json", client_secrets)
     store = MatchStore(args.sync_db.expanduser())
     try:
+        if not args.dry_run and args.sync_direction in {"from_youtube", "both"}:
+            spotify.ensure_playlist_writable(playlist_id)
+
         if args.sync_direction in {"from_spotify", "both"}:
             tracks = spotify.playlist_tracks(playlist_id)
             result = sync_playlist(

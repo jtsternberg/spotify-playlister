@@ -26,6 +26,13 @@ class SpotifyError(RuntimeError):
     pass
 
 
+class SpotifyApiError(SpotifyError):
+    def __init__(self, status: int, details: str) -> None:
+        super().__init__(f"Spotify API returned HTTP {status}: {details}")
+        self.status = status
+        self.details = details
+
+
 def cache_dir() -> Path:
     root = os.environ.get("SPOTIFY_PLAYLISTER_CACHE")
     if root:
@@ -72,7 +79,7 @@ def _json_request(
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         details = exc.read().decode("utf-8", errors="replace")
-        raise SpotifyError(f"Spotify API returned HTTP {exc.code}: {details}") from exc
+        raise SpotifyApiError(exc.code, details) from exc
 
 
 class _CallbackHandler(BaseHTTPRequestHandler):
@@ -136,7 +143,7 @@ class SpotifyClient:
         return playlists
 
     def playlist(self, playlist_id: str) -> dict[str, Any]:
-        return self.get(f"{API_BASE}/playlists/{playlist_id}?fields=id,name,description,external_urls,owner(display_name,id)")
+        return self.get(f"{API_BASE}/playlists/{playlist_id}?fields=id,name,description,collaborative,external_urls,owner(display_name,id)")
 
     def playlist_tracks(self, playlist_id: str) -> list[PlaylistTrack]:
         tracks: list[PlaylistTrack] = []
@@ -162,18 +169,46 @@ class SpotifyClient:
                 tracks.append(track)
         return tracks
 
+    def current_user_id(self) -> str:
+        payload = self.get(f"{API_BASE}/me")
+        return str(payload.get("id") or "")
+
+    def ensure_playlist_writable(self, playlist_id: str) -> None:
+        playlist = self.playlist(playlist_id)
+        owner = playlist.get("owner") or {}
+        owner_id = str(owner.get("id") or "")
+        owner_name = str(owner.get("display_name") or owner_id or "unknown")
+        current_user_id = self.current_user_id()
+        if owner_id == current_user_id or playlist.get("collaborative"):
+            return
+        name = playlist.get("name") or playlist_id
+        raise SpotifyError(
+            f"Spotify playlist '{name}' is owned by {owner_name}, so this account cannot add tracks to it. "
+            "Use a Spotify playlist owned by this account, make the playlist collaborative, or run without --from-youtube/--both."
+        )
+
     def add_tracks(self, playlist_id: str, track_ids: list[str]) -> None:
         headers = {"Authorization": f"Bearer {self.access_token()}"}
         for index in range(0, len(track_ids), 100):
             chunk = [track_id for track_id in track_ids[index : index + 100] if track_id]
             if not chunk:
                 continue
-            _json_request(
-                f"{API_BASE}/playlists/{playlist_id}/tracks",
-                method="POST",
-                headers=headers,
-                json_data={"uris": [f"spotify:track:{track_id}" for track_id in chunk]},
-            )
+            try:
+                _json_request(
+                    f"{API_BASE}/playlists/{playlist_id}/tracks",
+                    method="POST",
+                    headers=headers,
+                    json_data={"uris": [f"spotify:track:{track_id}" for track_id in chunk]},
+                )
+            except SpotifyApiError as exc:
+                if exc.status == 403:
+                    raise SpotifyError(
+                        f"Spotify refused to add tracks to playlist {playlist_id}. "
+                        "Confirm this Spotify account can modify the playlist and that authorization includes "
+                        "playlist-modify-private/playlist-modify-public. If you just changed scopes, delete "
+                        f"{self.token_path} and rerun."
+                    ) from exc
+                raise
 
     def get(self, url: str) -> dict[str, Any]:
         return _json_request(url, headers={"Authorization": f"Bearer {self.access_token()}"})
