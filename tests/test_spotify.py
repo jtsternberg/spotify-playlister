@@ -1,7 +1,15 @@
 import unittest
 from unittest.mock import patch
 
-from spotify_playlister.spotify import SpotifyApiError, SpotifyClient, SpotifyError, extract_playlist_id, parse_playlist_item, parse_spotify_track
+from spotify_playlister.spotify import (
+    SpotifyApiError,
+    SpotifyClient,
+    SpotifyError,
+    extract_playlist_id,
+    extract_track_id,
+    parse_playlist_item,
+    parse_spotify_track,
+)
 
 
 class SpotifyTests(unittest.TestCase):
@@ -10,6 +18,12 @@ class SpotifyTests(unittest.TestCase):
 
     def test_extract_playlist_id_from_uri(self):
         self.assertEqual(extract_playlist_id("spotify:playlist:abc123"), "abc123")
+
+    def test_extract_track_id_from_url(self):
+        self.assertEqual(extract_track_id("https://open.spotify.com/track/track123?si=xyz"), "track123")
+
+    def test_extract_track_id_from_uri(self):
+        self.assertEqual(extract_track_id("spotify:track:track123"), "track123")
 
     def test_parse_playlist_item(self):
         track = parse_playlist_item(

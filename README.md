@@ -161,6 +161,18 @@ The sync command keeps a SQLite cache at `~/.spotify-playlister/sync.sqlite` so 
 
 YouTube-to-Spotify sync uses cached mappings when available. With `--spotify-search-uncached`, it falls back to Spotify search from the YouTube video title. Review `--dry-run` output before applying searched matches.
 
+## Manually Map A Track
+
+If the automatic match is missing or wrong, add a cache mapping yourself:
+
+```bash
+.venv/bin/spotify-playlister map-youtube \
+  "https://open.spotify.com/track/..." \
+  "https://www.youtube.com/watch?v=..."
+```
+
+The next `sync-youtube` run will reuse that mapping in either direction.
+
 ## Update YouTube Playlist Privacy
 
 Change an existing playlist to `private`, `unlisted`, or `public`:

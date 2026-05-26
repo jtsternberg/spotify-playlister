@@ -12,6 +12,7 @@ from spotify_playlister.youtube import (
     YouTubeVideo,
     _client_config_from_env,
     _youtube_redirect,
+    extract_video_id,
     match_tracks,
     next_quota_reset,
     quota_reset_description,
@@ -64,6 +65,15 @@ class YouTubeTests(unittest.TestCase):
                 os.environ.pop("YOUTUBE_REDIRECT_URI", None)
             else:
                 os.environ["YOUTUBE_REDIRECT_URI"] = old_redirect_uri
+
+    def test_extract_video_id_from_watch_url(self):
+        self.assertEqual(extract_video_id("https://www.youtube.com/watch?v=abc123&list=playlist"), "abc123")
+
+    def test_extract_video_id_from_short_url(self):
+        self.assertEqual(extract_video_id("https://youtu.be/abc123"), "abc123")
+
+    def test_extract_video_id_from_shorts_url(self):
+        self.assertEqual(extract_video_id("https://www.youtube.com/shorts/abc123"), "abc123")
 
     def test_set_playlist_privacy_updates_status(self):
         service = FakeYouTubeService()

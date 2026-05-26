@@ -152,6 +152,20 @@ class YouTubeClient:
             url=f"https://www.youtube.com/watch?v={video_id}",
         )
 
+    def video(self, video_id: str) -> YouTubeVideo:
+        video_id = extract_video_id(video_id)
+        response = _execute_youtube_request(self.service.videos().list(part="snippet", id=video_id))
+        items = response.get("items", [])
+        if not items:
+            raise YouTubeError(f"YouTube video not found: {video_id}")
+        snippet = items[0].get("snippet") or {}
+        return YouTubeVideo(
+            video_id=video_id,
+            title=snippet.get("title", ""),
+            channel=snippet.get("channelTitle", ""),
+            url=f"https://www.youtube.com/watch?v={video_id}",
+        )
+
     def add_video(self, playlist_id: str, video_id: str) -> None:
         _execute_youtube_request(
             self.service.playlistItems()
@@ -231,6 +245,22 @@ def match_tracks(
                 )
             )
     return matches
+
+
+def extract_video_id(value: str) -> str:
+    value = value.strip()
+    parsed = urlparse(value)
+    if parsed.netloc.endswith("youtu.be"):
+        return parsed.path.strip("/")
+    if parsed.netloc.endswith("youtube.com") or parsed.netloc.endswith("youtube-nocookie.com"):
+        if parsed.path == "/watch":
+            query = dict(part.split("=", 1) for part in parsed.query.split("&") if "=" in part)
+            if query.get("v"):
+                return query["v"]
+        for prefix in ("/shorts/", "/embed/"):
+            if parsed.path.startswith(prefix):
+                return parsed.path.removeprefix(prefix).split("/", 1)[0]
+    return value
 
 
 def _quota_error_reason(exc: Exception) -> str | None:

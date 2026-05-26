@@ -8,7 +8,7 @@ from .csv_export import write_tracks_csv
 from .env import load_env
 from .spotify import SpotifyClient, SpotifyError, cache_dir, extract_playlist_id
 from .sync import MatchStore, sync_playlist, sync_spotify_from_youtube
-from .youtube import DEFAULT_RATE_LIMIT_RETRY_SECONDS, DEFAULT_SEARCH_DELAY_SECONDS, YouTubeClient, YouTubeError, match_tracks
+from .youtube import DEFAULT_RATE_LIMIT_RETRY_SECONDS, DEFAULT_SEARCH_DELAY_SECONDS, YouTubeClient, YouTubeError, YouTubeMatch, match_tracks
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -111,6 +111,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="Google OAuth Desktop client JSON. Defaults to YOUTUBE_CLIENT_ID/YOUTUBE_CLIENT_SECRET from .env.",
     )
 
+    map_youtube = subparsers.add_parser("map-youtube", help="Manually cache a Spotify track to YouTube video mapping.")
+    map_youtube.add_argument("spotify_track", help="Spotify track ID, URI, or open.spotify.com track URL.")
+    map_youtube.add_argument("youtube_video", help="YouTube video ID or URL.")
+    map_youtube.add_argument(
+        "--youtube-client-secrets",
+        type=Path,
+        help="Google OAuth Desktop client JSON. Defaults to YOUTUBE_CLIENT_ID/YOUTUBE_CLIENT_SECRET from .env.",
+    )
+    map_youtube.add_argument(
+        "--sync-db",
+        type=Path,
+        default=cache_dir() / "sync.sqlite",
+        help="SQLite database used to cache Spotify-to-YouTube matches. Defaults to %(default)s.",
+    )
+
     return parser
 
 
@@ -131,6 +146,8 @@ def main(argv: list[str] | None = None) -> int:
             return sync_youtube(spotify, args)
         if args.command == "set-youtube-privacy":
             return set_youtube_privacy(args)
+        if args.command == "map-youtube":
+            return map_youtube(spotify, args)
     except (SpotifyError, YouTubeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -283,6 +300,21 @@ def set_youtube_privacy(args: argparse.Namespace) -> int:
     youtube = YouTubeClient.from_oauth_config(cache_dir() / "youtube-token.json", client_secrets)
     privacy = youtube.set_playlist_privacy(args.youtube_playlist_id, args.privacy)
     print(f"Updated https://www.youtube.com/playlist?list={args.youtube_playlist_id} to {privacy}.")
+    return 0
+
+
+def map_youtube(spotify: SpotifyClient, args: argparse.Namespace) -> int:
+    track = spotify.track(args.spotify_track)
+    client_secrets = args.youtube_client_secrets.expanduser() if args.youtube_client_secrets else None
+    youtube = YouTubeClient.from_oauth_config(cache_dir() / "youtube-token.json", client_secrets)
+    video = youtube.video(args.youtube_video)
+    store = MatchStore(args.sync_db.expanduser())
+    try:
+        store.set(YouTubeMatch(track=track, video_id=video.video_id, title=video.title, channel=video.channel, url=video.url))
+    finally:
+        store.close()
+    print(f"Mapped Spotify track: {track.artists_text} - {track.track_name}")
+    print(f"To YouTube video: {video.title} | {video.channel} | {video.url}")
     return 0
 
 

@@ -52,6 +52,18 @@ def extract_playlist_id(value: str) -> str:
     return value
 
 
+def extract_track_id(value: str) -> str:
+    value = value.strip()
+    if value.startswith("spotify:track:"):
+        return value.rsplit(":", 1)[-1]
+    if "open.spotify.com/track/" in value:
+        parsed = urllib.parse.urlparse(value)
+        parts = [part for part in parsed.path.split("/") if part]
+        if len(parts) >= 2 and parts[0] == "track":
+            return parts[1]
+    return value
+
+
 def _urlsafe_b64(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).decode("ascii").rstrip("=")
 
@@ -168,6 +180,13 @@ class SpotifyClient:
             if track:
                 tracks.append(track)
         return tracks
+
+    def track(self, track_id: str) -> PlaylistTrack:
+        payload = self.get(f"{API_BASE}/tracks/{extract_track_id(track_id)}")
+        track = parse_spotify_track(payload, 1)
+        if not track:
+            raise SpotifyError(f"Spotify track not found: {track_id}")
+        return track
 
     def current_user_id(self) -> str:
         payload = self.get(f"{API_BASE}/me")
