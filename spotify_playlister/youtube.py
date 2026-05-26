@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import time
+import urllib.parse
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -254,9 +255,9 @@ def extract_video_id(value: str) -> str:
         return parsed.path.strip("/")
     if parsed.netloc.endswith("youtube.com") or parsed.netloc.endswith("youtube-nocookie.com"):
         if parsed.path == "/watch":
-            query = dict(part.split("=", 1) for part in parsed.query.split("&") if "=" in part)
+            query = urllib.parse.parse_qs(parsed.query)
             if query.get("v"):
-                return query["v"]
+                return query["v"][0]
         for prefix in ("/shorts/", "/embed/"):
             if parsed.path.startswith(prefix):
                 return parsed.path.removeprefix(prefix).split("/", 1)[0]

@@ -173,6 +173,16 @@ If the automatic match is missing or wrong, add a cache mapping yourself:
 
 The next `sync-youtube` run will reuse that mapping in either direction.
 
+## Browser UI
+
+Run the local browser UI to manage saved playlist pairs, manual mappings, and sync dry-runs:
+
+```bash
+.venv/bin/spotify-playlister web
+```
+
+The UI stores playlist pairs and mappings in the same SQLite database used by the CLI. It binds to `127.0.0.1:8877` by default.
+
 ## Update YouTube Playlist Privacy
 
 Change an existing playlist to `private`, `unlisted`, or `public`:

@@ -8,6 +8,7 @@ from .csv_export import write_tracks_csv
 from .env import load_env
 from .spotify import SpotifyClient, SpotifyError, cache_dir, extract_playlist_id
 from .sync import MatchStore, sync_playlist, sync_spotify_from_youtube
+from .web import serve_web_app
 from .youtube import DEFAULT_RATE_LIMIT_RETRY_SECONDS, DEFAULT_SEARCH_DELAY_SECONDS, YouTubeClient, YouTubeError, YouTubeMatch, match_tracks
 
 
@@ -126,6 +127,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="SQLite database used to cache Spotify-to-YouTube matches. Defaults to %(default)s.",
     )
 
+    web = subparsers.add_parser("web", help="Run the local browser UI for playlists and mappings.")
+    web.add_argument("--host", default="127.0.0.1", help="Host to bind. Defaults to %(default)s.")
+    web.add_argument("--port", type=int, default=8877, help="Port to bind. Defaults to %(default)s.")
+    web.add_argument("--no-open", action="store_true", help="Do not open the browser automatically.")
+    web.add_argument(
+        "--youtube-client-secrets",
+        type=Path,
+        help="Google OAuth Desktop client JSON. Defaults to YOUTUBE_CLIENT_ID/YOUTUBE_CLIENT_SECRET from .env.",
+    )
+    web.add_argument(
+        "--sync-db",
+        type=Path,
+        default=cache_dir() / "sync.sqlite",
+        help="SQLite database used to cache Spotify-to-YouTube matches. Defaults to %(default)s.",
+    )
+
     return parser
 
 
@@ -148,6 +165,8 @@ def main(argv: list[str] | None = None) -> int:
             return set_youtube_privacy(args)
         if args.command == "map-youtube":
             return map_youtube(spotify, args)
+        if args.command == "web":
+            return web(spotify, args)
     except (SpotifyError, YouTubeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -315,6 +334,19 @@ def map_youtube(spotify: SpotifyClient, args: argparse.Namespace) -> int:
         store.close()
     print(f"Mapped Spotify track: {track.artists_text} - {track.track_name}")
     print(f"To YouTube video: {video.title} | {video.channel} | {video.url}")
+    return 0
+
+
+def web(spotify: SpotifyClient, args: argparse.Namespace) -> int:
+    client_secrets = args.youtube_client_secrets.expanduser() if args.youtube_client_secrets else None
+    serve_web_app(
+        spotify,
+        db_path=args.sync_db.expanduser(),
+        youtube_client_secrets=client_secrets,
+        host=args.host,
+        port=args.port,
+        open_browser=not args.no_open,
+    )
     return 0
 
 

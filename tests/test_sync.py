@@ -37,6 +37,59 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(match.track.track_id, "spotify-id")
         self.assertEqual(match.video_id, "video-id")
 
+    def test_match_store_playlist_round_trip(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            store = MatchStore(Path(tempdir) / "sync.sqlite")
+
+            playlist = store.upsert_playlist(
+                spotify_playlist_id="spotify-playlist",
+                spotify_name="Spotify Name",
+                youtube_playlist_id="youtube-playlist",
+                youtube_title="YouTube Name",
+                notes="paired",
+            )
+            fetched = store.get_playlist(playlist.id)
+            playlists = store.playlists()
+            store.close()
+
+        self.assertEqual(fetched.spotify_playlist_id, "spotify-playlist")
+        self.assertEqual(playlists[0].youtube_title, "YouTube Name")
+        self.assertIsNone(playlists[0].last_synced_at)
+
+    def test_match_store_playlist_upsert_updates_existing_pair(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            store = MatchStore(Path(tempdir) / "sync.sqlite")
+
+            first = store.upsert_playlist(
+                spotify_playlist_id="spotify-playlist",
+                spotify_name="Old",
+                youtube_playlist_id="youtube-playlist",
+                youtube_title="Old",
+            )
+            second = store.upsert_playlist(
+                spotify_playlist_id="spotify-playlist",
+                spotify_name="New",
+                youtube_playlist_id="youtube-playlist",
+                youtube_title="New",
+            )
+            store.close()
+
+        self.assertEqual(first.id, second.id)
+        self.assertEqual(second.spotify_name, "New")
+
+    def test_match_store_delete_match(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            store = MatchStore(Path(tempdir) / "sync.sqlite")
+            track = _track(track_id="spotify-id")
+            store.set(YouTubeMatch(track, "video-id", "Video", "Channel", "https://www.youtube.com/watch?v=video-id"))
+
+            deleted = store.delete_match("spotify:spotify-id")
+            match = store.get(track)
+            store.close()
+
+        self.assertTrue(deleted)
+        self.assertIsNone(match)
+
     def test_sync_playlist_uses_cached_matches_and_adds_missing(self):
         with tempfile.TemporaryDirectory() as tempdir:
             store = MatchStore(Path(tempdir) / "sync.sqlite")

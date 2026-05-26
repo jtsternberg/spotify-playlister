@@ -36,6 +36,19 @@ class SpotifySyncResult:
     dry_run: bool
 
 
+@dataclass(frozen=True)
+class SyncedPlaylist:
+    id: int
+    spotify_playlist_id: str
+    spotify_name: str
+    youtube_playlist_id: str
+    youtube_title: str
+    notes: str
+    last_synced_at: int | None
+    created_at: int
+    updated_at: int
+
+
 class MatchStore:
     def __init__(self, path: Path) -> None:
         self.path = path
@@ -46,6 +59,23 @@ class MatchStore:
 
     def close(self) -> None:
         self.connection.close()
+
+    def __enter__(self) -> "MatchStore":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.close()
+
+    def matches(self) -> list[dict[str, object]]:
+        rows = self.connection.execute(
+            """
+            SELECT track_key, spotify_track_id, isrc, query, youtube_video_id,
+                   youtube_title, youtube_channel, youtube_url, updated_at
+            FROM track_matches
+            ORDER BY updated_at DESC, query COLLATE NOCASE
+            """
+        ).fetchall()
+        return [dict(row) for row in rows]
 
     def get(self, track: PlaylistTrack) -> YouTubeMatch | None:
         row = self.connection.execute(
@@ -132,6 +162,81 @@ class MatchStore:
         )
         self.connection.commit()
 
+    def delete_match(self, track_key: str) -> bool:
+        cursor = self.connection.execute("DELETE FROM track_matches WHERE track_key = ?", (track_key,))
+        self.connection.commit()
+        return cursor.rowcount > 0
+
+    def playlists(self) -> list[SyncedPlaylist]:
+        rows = self.connection.execute(
+            """
+            SELECT id, spotify_playlist_id, spotify_name, youtube_playlist_id, youtube_title,
+                   notes, last_synced_at, created_at, updated_at
+            FROM playlists
+            ORDER BY updated_at DESC, spotify_name COLLATE NOCASE
+            """
+        ).fetchall()
+        return [self._playlist_from_row(row) for row in rows]
+
+    def get_playlist(self, playlist_id: int) -> SyncedPlaylist | None:
+        row = self.connection.execute(
+            """
+            SELECT id, spotify_playlist_id, spotify_name, youtube_playlist_id, youtube_title,
+                   notes, last_synced_at, created_at, updated_at
+            FROM playlists
+            WHERE id = ?
+            """,
+            (playlist_id,),
+        ).fetchone()
+        return self._playlist_from_row(row) if row else None
+
+    def upsert_playlist(
+        self,
+        *,
+        spotify_playlist_id: str,
+        youtube_playlist_id: str,
+        spotify_name: str = "",
+        youtube_title: str = "",
+        notes: str = "",
+    ) -> SyncedPlaylist:
+        now = int(time.time())
+        self.connection.execute(
+            """
+            INSERT INTO playlists (
+                spotify_playlist_id, spotify_name, youtube_playlist_id, youtube_title,
+                notes, last_synced_at, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, NULL, ?, ?)
+            ON CONFLICT(spotify_playlist_id, youtube_playlist_id) DO UPDATE SET
+                spotify_name = excluded.spotify_name,
+                youtube_title = excluded.youtube_title,
+                notes = excluded.notes,
+                updated_at = excluded.updated_at
+            """,
+            (spotify_playlist_id, spotify_name, youtube_playlist_id, youtube_title, notes, now, now),
+        )
+        self.connection.commit()
+        row = self.connection.execute(
+            """
+            SELECT id, spotify_playlist_id, spotify_name, youtube_playlist_id, youtube_title,
+                   notes, last_synced_at, created_at, updated_at
+            FROM playlists
+            WHERE spotify_playlist_id = ? AND youtube_playlist_id = ?
+            """,
+            (spotify_playlist_id, youtube_playlist_id),
+        ).fetchone()
+        return self._playlist_from_row(row)
+
+    def mark_playlist_synced(self, playlist_id: int) -> None:
+        now = int(time.time())
+        self.connection.execute("UPDATE playlists SET last_synced_at = ?, updated_at = ? WHERE id = ?", (now, now, playlist_id))
+        self.connection.commit()
+
+    def delete_playlist(self, playlist_id: int) -> bool:
+        cursor = self.connection.execute("DELETE FROM playlists WHERE id = ?", (playlist_id,))
+        self.connection.commit()
+        return cursor.rowcount > 0
+
     def _migrate(self) -> None:
         self.connection.execute(
             """
@@ -148,7 +253,36 @@ class MatchStore:
             )
             """
         )
+        self.connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS playlists (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                spotify_playlist_id TEXT NOT NULL,
+                spotify_name TEXT NOT NULL DEFAULT '',
+                youtube_playlist_id TEXT NOT NULL,
+                youtube_title TEXT NOT NULL DEFAULT '',
+                notes TEXT NOT NULL DEFAULT '',
+                last_synced_at INTEGER,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                UNIQUE(spotify_playlist_id, youtube_playlist_id)
+            )
+            """
+        )
         self.connection.commit()
+
+    def _playlist_from_row(self, row) -> SyncedPlaylist:
+        return SyncedPlaylist(
+            id=int(row["id"]),
+            spotify_playlist_id=row["spotify_playlist_id"],
+            spotify_name=row["spotify_name"],
+            youtube_playlist_id=row["youtube_playlist_id"],
+            youtube_title=row["youtube_title"],
+            notes=row["notes"],
+            last_synced_at=row["last_synced_at"],
+            created_at=int(row["created_at"]),
+            updated_at=int(row["updated_at"]),
+        )
 
 
 def track_key(track: PlaylistTrack) -> str:
