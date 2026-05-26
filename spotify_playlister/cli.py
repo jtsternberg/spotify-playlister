@@ -7,7 +7,14 @@ from pathlib import Path
 from .csv_export import write_tracks_csv
 from .env import load_env
 from .spotify import SpotifyClient, SpotifyError, cache_dir, extract_playlist_id
-from .sync import MatchStore, sync_playlist, sync_spotify_from_youtube
+from .sync import (
+    MatchStore,
+    SyncError,
+    remove_spotify_tracks_not_in_youtube,
+    remove_youtube_items_not_in_spotify,
+    sync_playlist,
+    sync_spotify_from_youtube,
+)
 from .web import serve_web_app
 from .youtube import DEFAULT_RATE_LIMIT_RETRY_SECONDS, DEFAULT_SEARCH_DELAY_SECONDS, YouTubeClient, YouTubeError, YouTubeMatch, match_tracks
 
@@ -103,6 +110,49 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sync_youtube.set_defaults(sync_direction="from_spotify")
 
+    sync_remove = subparsers.add_parser("sync-remove", help="Remove items missing from the opposite playlist.")
+    sync_remove.add_argument("playlist", help="Spotify playlist ID, URI, or open.spotify.com playlist URL.")
+    sync_remove.add_argument("--youtube-playlist-id", required=True, help="Existing YouTube playlist ID to compare against.")
+    sync_remove.add_argument(
+        "--youtube-client-secrets",
+        type=Path,
+        help="Google OAuth Desktop client JSON. Defaults to YOUTUBE_CLIENT_ID/YOUTUBE_CLIENT_SECRET from .env.",
+    )
+    sync_remove.add_argument(
+        "--apply",
+        action="store_true",
+        help="Actually remove items. Without this flag, sync-remove only prints a dry run.",
+    )
+    sync_remove.add_argument(
+        "--sync-db",
+        type=Path,
+        default=cache_dir() / "sync.sqlite",
+        help="SQLite database used to cache Spotify-to-YouTube matches. Defaults to %(default)s.",
+    )
+    remove_direction = sync_remove.add_mutually_exclusive_group()
+    remove_direction.add_argument(
+        "--from-spotify",
+        action="store_const",
+        const="from_spotify",
+        dest="sync_direction",
+        help="Remove YouTube playlist items not mapped from the current Spotify playlist. This is the default.",
+    )
+    remove_direction.add_argument(
+        "--from-youtube",
+        action="store_const",
+        const="from_youtube",
+        dest="sync_direction",
+        help="Remove Spotify tracks not mapped from the current YouTube playlist.",
+    )
+    remove_direction.add_argument(
+        "--both",
+        action="store_const",
+        const="both",
+        dest="sync_direction",
+        help="Remove missing items in both directions.",
+    )
+    sync_remove.set_defaults(sync_direction="from_spotify")
+
     set_privacy = subparsers.add_parser("set-youtube-privacy", help="Update an existing YouTube playlist's privacy.")
     set_privacy.add_argument("youtube_playlist_id", help="YouTube playlist ID.")
     set_privacy.add_argument("privacy", choices=["private", "unlisted", "public"], help="New playlist privacy.")
@@ -161,13 +211,15 @@ def main(argv: list[str] | None = None) -> int:
             return export_youtube(spotify, args)
         if args.command == "sync-youtube":
             return sync_youtube(spotify, args)
+        if args.command == "sync-remove":
+            return sync_remove(spotify, args)
         if args.command == "set-youtube-privacy":
             return set_youtube_privacy(args)
         if args.command == "map-youtube":
             return map_youtube(spotify, args)
         if args.command == "web":
             return web(spotify, args)
-    except (SpotifyError, YouTubeError) as exc:
+    except (SpotifyError, SyncError, YouTubeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     except KeyboardInterrupt:
@@ -278,6 +330,46 @@ def sync_youtube(spotify: SpotifyClient, args: argparse.Namespace) -> int:
     return 0
 
 
+def sync_remove(spotify: SpotifyClient, args: argparse.Namespace) -> int:
+    playlist_id = extract_playlist_id(args.playlist)
+    dry_run = not args.apply
+    tracks = None
+    client_secrets = args.youtube_client_secrets.expanduser() if args.youtube_client_secrets else None
+    youtube = YouTubeClient.from_oauth_config(cache_dir() / "youtube-token.json", client_secrets)
+    store = MatchStore(args.sync_db.expanduser())
+    try:
+        if not dry_run and args.sync_direction in {"from_youtube", "both"}:
+            spotify.ensure_playlist_writable(playlist_id)
+
+        if args.sync_direction in {"from_spotify", "both"}:
+            tracks = spotify.playlist_tracks(playlist_id)
+            result = remove_youtube_items_not_in_spotify(
+                youtube,
+                tracks,
+                args.youtube_playlist_id,
+                store,
+                dry_run=dry_run,
+                on_progress=lambda message: print(message, file=sys.stderr),
+            )
+            print_remove_result(result, dry_run)
+
+        if args.sync_direction in {"from_youtube", "both"}:
+            result = remove_spotify_tracks_not_in_youtube(
+                spotify,
+                youtube,
+                playlist_id,
+                args.youtube_playlist_id,
+                store,
+                dry_run=dry_run,
+                spotify_tracks=tracks,
+                on_progress=lambda message: print(message, file=sys.stderr),
+            )
+            print_remove_result(result, dry_run)
+    finally:
+        store.close()
+    return 0
+
+
 def print_youtube_sync_result(result, dry_run: bool) -> None:
     action = "Would add" if dry_run else "Added"
     for match in result.added:
@@ -293,6 +385,22 @@ def print_youtube_sync_result(result, dry_run: bool) -> None:
         f"{len(result.already_present)} already present, "
         f"{len(result.missing)} missing match, "
         f"{len(result.matched)} cached/resolved matches."
+    )
+
+
+def print_remove_result(result, dry_run: bool) -> None:
+    target = "YouTube" if result.direction == "from_spotify" else "Spotify"
+    action = "Would remove" if dry_run else "Removed"
+    for item in result.removed:
+        if hasattr(item, "track"):
+            track = item.track
+            print(f"{action} from {target}: {track.artists_text} - {track.track_name}")
+        else:
+            print(f"{action} from {target}: {item.title} | https://www.youtube.com/watch?v={item.video_id}")
+    print(
+        f"{target} remove {'dry run ' if dry_run else ''}complete. "
+        f"{len(result.removed)} {'would be removed' if dry_run else 'removed'}, "
+        f"{len(result.kept)} kept."
     )
 
 

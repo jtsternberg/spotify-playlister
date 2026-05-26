@@ -36,6 +36,19 @@ class SpotifySyncResult:
     dry_run: bool
 
 
+class SyncError(RuntimeError):
+    pass
+
+
+@dataclass(frozen=True)
+class SyncRemoveResult:
+    direction: str
+    removed: list[YouTubeMatch | YouTubePlaylistItem]
+    kept: list[YouTubeMatch | YouTubePlaylistItem]
+    unknown: list[YouTubePlaylistItem]
+    dry_run: bool
+
+
 @dataclass(frozen=True)
 class SyncedPlaylist:
     id: int
@@ -128,6 +141,14 @@ class MatchStore:
             channel=row["youtube_channel"],
             url=row["youtube_url"],
         )
+
+    def youtube_video_ids_for_tracks(self, tracks: Iterable[PlaylistTrack]) -> set[str]:
+        ids: set[str] = set()
+        for track in tracks:
+            match = self.get(track)
+            if match:
+                ids.add(match.video_id)
+        return ids
 
     def set(self, match: YouTubeMatch) -> None:
         now = int(time.time())
@@ -399,6 +420,78 @@ def sync_spotify_from_youtube(
         added.append(match)
 
     return SpotifySyncResult(matched=matched, added=added, already_present=already_present, missing=missing, dry_run=dry_run)
+
+
+def remove_youtube_items_not_in_spotify(
+    client: YouTubeClient,
+    spotify_tracks: Iterable[PlaylistTrack],
+    youtube_playlist_id: str,
+    store: MatchStore,
+    *,
+    dry_run: bool,
+    on_progress: Callable[[str], None] | None = None,
+) -> SyncRemoveResult:
+    spotify_tracks = list(spotify_tracks)
+    uncached_tracks = [track for track in spotify_tracks if not store.get(track)]
+    if uncached_tracks:
+        raise SyncError(_incomplete_cache_message("remove YouTube items", uncached_tracks))
+
+    expected_video_ids = store.youtube_video_ids_for_tracks(spotify_tracks)
+    removed: list[YouTubePlaylistItem] = []
+    kept: list[YouTubePlaylistItem] = []
+    unknown: list[YouTubePlaylistItem] = []
+    for item in client.playlist_items(youtube_playlist_id):
+        if item.video_id in expected_video_ids:
+            kept.append(item)
+            continue
+        unknown.append(item)
+        removed.append(item)
+        _progress(on_progress, f"{'Would remove' if dry_run else 'Removing'} YouTube item: {item.title}")
+        if not dry_run:
+            client.remove_playlist_item(item.playlist_item_id)
+    return SyncRemoveResult(direction="from_spotify", removed=removed, kept=kept, unknown=unknown, dry_run=dry_run)
+
+
+def remove_spotify_tracks_not_in_youtube(
+    spotify: SpotifyClient,
+    youtube: YouTubeClient,
+    spotify_playlist_id: str,
+    youtube_playlist_id: str,
+    store: MatchStore,
+    *,
+    dry_run: bool,
+    spotify_tracks: list[PlaylistTrack] | None = None,
+    on_progress: Callable[[str], None] | None = None,
+) -> SyncRemoveResult:
+    spotify_tracks = spotify_tracks if spotify_tracks is not None else spotify.playlist_tracks(spotify_playlist_id)
+    uncached_tracks = [track for track in spotify_tracks if not store.get(track)]
+    if uncached_tracks:
+        raise SyncError(_incomplete_cache_message("remove Spotify tracks", uncached_tracks))
+
+    youtube_video_ids = {item.video_id for item in youtube.playlist_items(youtube_playlist_id)}
+    removed: list[YouTubeMatch] = []
+    kept: list[YouTubeMatch] = []
+    for track in spotify_tracks:
+        match = store.get(track)
+        if match and match.video_id in youtube_video_ids:
+            kept.append(match)
+            continue
+        placeholder = YouTubeMatch(track=track, video_id=match.video_id if match else "", title=match.title if match else "", channel="", url="")
+        removed.append(placeholder)
+        _progress(on_progress, f"{'Would remove' if dry_run else 'Removing'} Spotify track: {track.artists_text} - {track.track_name}")
+        if not dry_run:
+            spotify.remove_tracks(spotify_playlist_id, [track.track_id])
+    return SyncRemoveResult(direction="from_youtube", removed=removed, kept=kept, unknown=[], dry_run=dry_run)
+
+
+def _incomplete_cache_message(action: str, uncached_tracks: list[PlaylistTrack]) -> str:
+    examples = ", ".join(f"{track.artists_text} - {track.track_name}" for track in uncached_tracks[:3])
+    suffix = f" Examples: {examples}." if examples else ""
+    return (
+        f"Cannot safely {action}: {len(uncached_tracks)} Spotify tracks have no cached YouTube mapping. "
+        "Run sync-youtube first, or add manual mappings with map-youtube, then retry sync-remove."
+        f"{suffix}"
+    )
 
 
 def _search_with_retry(

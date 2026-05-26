@@ -3,7 +3,15 @@ import unittest
 from pathlib import Path
 
 from spotify_playlister.models import PlaylistTrack
-from spotify_playlister.sync import MatchStore, sync_playlist, sync_spotify_from_youtube, track_key
+from spotify_playlister.sync import (
+    MatchStore,
+    SyncError,
+    remove_spotify_tracks_not_in_youtube,
+    remove_youtube_items_not_in_spotify,
+    sync_playlist,
+    sync_spotify_from_youtube,
+    track_key,
+)
 from spotify_playlister.youtube import YouTubeMatch, YouTubePlaylistItem, YouTubeVideo
 
 
@@ -219,16 +227,89 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(spotify.added, [])
         self.assertEqual(len(result.already_present), 1)
 
+    def test_remove_youtube_items_not_in_spotify_uses_cached_mappings(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            store = MatchStore(Path(tempdir) / "sync.sqlite")
+            keep = _track(track_id="keep")
+            store.set(YouTubeMatch(keep, "keep-video", "Keep Video", "Channel", "https://www.youtube.com/watch?v=keep-video"))
+            client = FakeYouTubeClient(
+                existing_video_ids=set(),
+                search_results=[],
+                playlist_items=[
+                    YouTubePlaylistItem("keep-item", "keep-video", "Keep Video"),
+                    YouTubePlaylistItem("old-item", "old-video", "Old Video"),
+                ],
+            )
+
+            result = remove_youtube_items_not_in_spotify(client, [keep], "playlist-id", store, dry_run=False)
+            store.close()
+
+        self.assertEqual(client.removed, ["old-item"])
+        self.assertEqual([item.video_id for item in result.removed], ["old-video"])
+        self.assertEqual([item.video_id for item in result.kept], ["keep-video"])
+
+    def test_remove_youtube_items_not_in_spotify_dry_run_does_not_delete(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            store = MatchStore(Path(tempdir) / "sync.sqlite")
+            client = FakeYouTubeClient(
+                existing_video_ids=set(),
+                search_results=[],
+                playlist_items=[YouTubePlaylistItem("old-item", "old-video", "Old Video")],
+            )
+
+            result = remove_youtube_items_not_in_spotify(client, [], "playlist-id", store, dry_run=True)
+            store.close()
+
+        self.assertEqual(client.removed, [])
+        self.assertEqual(len(result.removed), 1)
+
+    def test_remove_spotify_tracks_not_in_youtube_uses_cached_mappings(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            store = MatchStore(Path(tempdir) / "sync.sqlite")
+            keep = _track(track_id="keep")
+            old = _track(track_id="old")
+            store.set(YouTubeMatch(keep, "keep-video", "Keep Video", "Channel", "https://www.youtube.com/watch?v=keep-video"))
+            store.set(YouTubeMatch(old, "old-video", "Old Video", "Channel", "https://www.youtube.com/watch?v=old-video"))
+            spotify = FakeSpotifyClient(existing_tracks=[keep, old])
+            youtube = FakeYouTubePlaylistClient([YouTubePlaylistItem("keep-item", "keep-video", "Keep Video")])
+
+            result = remove_spotify_tracks_not_in_youtube(spotify, youtube, "spotify-playlist", "youtube-playlist", store, dry_run=False)
+            store.close()
+
+        self.assertEqual(spotify.removed, [("spotify-playlist", ["old"])])
+        self.assertEqual([match.track.track_id for match in result.removed], ["old"])
+
+    def test_remove_youtube_items_not_in_spotify_requires_complete_cache(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            store = MatchStore(Path(tempdir) / "sync.sqlite")
+            uncached = _track(track_id="uncached")
+            client = FakeYouTubeClient(
+                existing_video_ids=set(),
+                search_results=[],
+                playlist_items=[YouTubePlaylistItem("old-item", "old-video", "Old Video")],
+            )
+
+            with self.assertRaisesRegex(SyncError, "no cached YouTube mapping"):
+                remove_youtube_items_not_in_spotify(client, [uncached], "playlist-id", store, dry_run=False)
+            store.close()
+
+        self.assertEqual(client.removed, [])
+
 
 class FakeYouTubeClient:
-    def __init__(self, existing_video_ids, search_results):
+    def __init__(self, existing_video_ids, search_results, playlist_items=None):
         self.existing_video_ids = existing_video_ids
         self.search_results = list(search_results)
         self.searches = []
         self.added = []
+        self.removed = []
+        self._playlist_items = playlist_items
 
     def playlist_video_ids(self, playlist_id):
         return set(self.existing_video_ids)
+
+    def playlist_items(self, playlist_id):
+        return list(self._playlist_items or [])
 
     def search_video(self, query):
         self.searches.append(query)
@@ -236,6 +317,9 @@ class FakeYouTubeClient:
 
     def add_video(self, playlist_id, video_id):
         self.added.append((playlist_id, video_id))
+
+    def remove_playlist_item(self, playlist_item_id):
+        self.removed.append(playlist_item_id)
 
 
 class FakeYouTubePlaylistClient:
@@ -252,6 +336,7 @@ class FakeSpotifyClient:
         self.search_results = list(search_results or [])
         self.searches = []
         self.added = []
+        self.removed = []
 
     def playlist_tracks(self, playlist_id):
         return list(self.existing_tracks)
@@ -262,6 +347,9 @@ class FakeSpotifyClient:
 
     def add_tracks(self, playlist_id, track_ids):
         self.added.append((playlist_id, track_ids))
+
+    def remove_tracks(self, playlist_id, track_ids):
+        self.removed.append((playlist_id, track_ids))
 
 
 def _track(position=1, track_id="track-id", isrc=""):

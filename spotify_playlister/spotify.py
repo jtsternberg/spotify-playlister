@@ -229,6 +229,19 @@ class SpotifyClient:
                     ) from exc
                 raise
 
+    def remove_tracks(self, playlist_id: str, track_ids: list[str]) -> None:
+        headers = {"Authorization": f"Bearer {self.access_token()}"}
+        for index in range(0, len(track_ids), 100):
+            chunk = [track_id for track_id in track_ids[index : index + 100] if track_id]
+            if not chunk:
+                continue
+            _json_request(
+                f"{API_BASE}/playlists/{playlist_id}/tracks",
+                method="DELETE",
+                headers=headers,
+                json_data={"tracks": [{"uri": f"spotify:track:{track_id}"} for track_id in chunk]},
+            )
+
     def get(self, url: str) -> dict[str, Any]:
         return _json_request(url, headers={"Authorization": f"Bearer {self.access_token()}"})
 

@@ -181,6 +181,9 @@ class YouTubeClient:
             )
         )
 
+    def remove_playlist_item(self, playlist_item_id: str) -> None:
+        _execute_youtube_request(self.service.playlistItems().delete(id=playlist_item_id))
+
     def playlist_items(self, playlist_id: str) -> list[YouTubePlaylistItem]:
         items: list[YouTubePlaylistItem] = []
         page_token = None

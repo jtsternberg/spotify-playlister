@@ -161,6 +161,25 @@ The sync command keeps a SQLite cache at `~/.spotify-playlister/sync.sqlite` so 
 
 YouTube-to-Spotify sync uses cached mappings when available. With `--spotify-search-uncached`, it falls back to Spotify search from the YouTube video title. Review `--dry-run` output before applying searched matches.
 
+## Remove Stale Items
+
+Remove-mode sync is separate and dry-runs by default. To find YouTube videos that are not mapped from the current Spotify playlist:
+
+```bash
+.venv/bin/spotify-playlister sync-remove "https://open.spotify.com/playlist/..." \
+  --youtube-playlist-id "PL..."
+```
+
+Apply the removals only after reviewing the output:
+
+```bash
+.venv/bin/spotify-playlister sync-remove "https://open.spotify.com/playlist/..." \
+  --youtube-playlist-id "PL..." \
+  --apply
+```
+
+Use `--from-youtube` to remove Spotify tracks that are not mapped from the YouTube playlist, or `--both` to remove in both directions. Removals use the local mapping cache as the source of truth and stop if the Spotify playlist has uncached tracks.
+
 ## Manually Map A Track
 
 If the automatic match is missing or wrong, add a cache mapping yourself:
