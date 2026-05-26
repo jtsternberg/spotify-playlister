@@ -264,6 +264,16 @@ def extract_video_id(value: str) -> str:
     return value
 
 
+def extract_playlist_id(value: str) -> str:
+    value = value.strip()
+    parsed = urlparse(value)
+    if parsed.netloc.endswith("youtube.com") or parsed.netloc.endswith("youtube-nocookie.com"):
+        query = urllib.parse.parse_qs(parsed.query)
+        if query.get("list"):
+            return query["list"][0]
+    return value
+
+
 def _quota_error_reason(exc: Exception) -> str | None:
     status = getattr(getattr(exc, "resp", None), "status", None)
     if status not in {403, 429}:

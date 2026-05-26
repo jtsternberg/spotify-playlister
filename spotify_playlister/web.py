@@ -16,6 +16,7 @@ from .youtube import (
     DEFAULT_SEARCH_DELAY_SECONDS,
     YouTubeClient,
     YouTubeMatch,
+    extract_playlist_id as extract_youtube_playlist_id,
 )
 
 
@@ -126,7 +127,7 @@ class SpotifyPlaylisterHandler(BaseHTTPRequestHandler):
 
     def _save_playlist(self, payload: dict[str, Any]) -> dict[str, object]:
         spotify_playlist_id = extract_playlist_id(str(payload.get("spotify_playlist_id") or ""))
-        youtube_playlist_id = str(payload.get("youtube_playlist_id") or "").strip()
+        youtube_playlist_id = extract_youtube_playlist_id(str(payload.get("youtube_playlist_id") or ""))
         if not spotify_playlist_id or not youtube_playlist_id:
             raise WebError("Spotify playlist and YouTube playlist are required.")
         spotify_name = str(payload.get("spotify_name") or "")
@@ -451,7 +452,7 @@ INDEX_HTML = r"""<!doctype html>
         <h2>Save Playlist Pair</h2>
         <form id="playlistForm">
           <label>Spotify playlist<input name="spotify_playlist_id" placeholder="Spotify playlist URL or ID" required></label>
-          <label>YouTube playlist<input name="youtube_playlist_id" placeholder="YouTube playlist ID" required></label>
+          <label>YouTube playlist<input name="youtube_playlist_id" placeholder="YouTube playlist URL or ID" required></label>
           <label>Notes<textarea name="notes" placeholder="What this pair is for"></textarea></label>
           <button>Save pair</button>
         </form>
