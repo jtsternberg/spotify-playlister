@@ -194,13 +194,31 @@ The next `sync-youtube` run will reuse that mapping in either direction.
 
 ## Browser UI
 
-Run the local browser UI to manage saved playlist pairs, manual mappings, and sync dry-runs:
+Run the local browser UI to manage saved playlist pairs, manual mappings, sync previews, and remove previews:
 
 ```bash
 .venv/bin/spotify-playlister web
 ```
 
-The UI stores playlist pairs and mappings in the same SQLite database used by the CLI. It binds to `127.0.0.1:8877` by default.
+The UI stores playlist pairs and mappings in the same SQLite database used by the CLI. It binds to `127.0.0.1:8877` by default and opens your browser automatically.
+
+To start it without opening a browser:
+
+```bash
+.venv/bin/spotify-playlister web --no-open
+```
+
+To use a different host or port:
+
+```bash
+.venv/bin/spotify-playlister web --host 127.0.0.1 --port 8899
+```
+
+To stop the server, press `Ctrl-C` in the terminal where it is running. If you started it in the background, stop that shell job with `kill %1` or find and stop the process using the port:
+
+```bash
+lsof -ti tcp:8877 | xargs kill
+```
 
 ## Update YouTube Playlist Privacy
 
