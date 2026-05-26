@@ -527,7 +527,7 @@ INDEX_HTML = r"""<!doctype html>
       const rows = state.mappings.filter(m => !needle || `${m.query} ${m.youtube_title} ${m.youtube_channel}`.toLowerCase().includes(needle));
       $("mappings").innerHTML = rows.map(m => `
         <tr>
-          <td><span class="pill">${escapeHtml(m.spotify_track_id || "query")}</span><br>${escapeHtml(m.query || "")}</td>
+          <td><span class="pill">${escapeHtml(m.spotify_track_id || "query")}</span><br>${spotifyLink(m)}</td>
           <td><a href="${escapeHtml(m.youtube_url)}" target="_blank">${escapeHtml(m.youtube_title || m.youtube_video_id)}</a><br><span class="meta">${escapeHtml(m.youtube_channel || "")}</span></td>
           <td>${m.updated_at ? new Date(m.updated_at * 1000).toLocaleString() : ""}</td>
           <td><button class="danger" type="button" onclick="deleteMapping('${encodeURIComponent(m.track_key)}')">Delete</button></td>
@@ -563,6 +563,11 @@ INDEX_HTML = r"""<!doctype html>
     }
     function escapeHtml(value) {
       return String(value ?? "").replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+    }
+    function spotifyLink(mapping) {
+      const label = escapeHtml(mapping.query || mapping.spotify_track_id || "");
+      if (!mapping.spotify_track_id) return label;
+      return `<a href="https://open.spotify.com/track/${encodeURIComponent(mapping.spotify_track_id)}" target="_blank">${label}</a>`;
     }
     window.sync = sync;
     window.deletePlaylist = deletePlaylist;
