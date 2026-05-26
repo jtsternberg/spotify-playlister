@@ -10,7 +10,14 @@ from pathlib import Path
 from typing import Any
 
 from .spotify import SpotifyClient, extract_playlist_id
-from .sync import MatchStore, sync_playlist, sync_spotify_from_youtube
+from .sync import (
+    MatchStore,
+    SyncError,
+    remove_spotify_tracks_not_in_youtube,
+    remove_youtube_items_not_in_spotify,
+    sync_playlist,
+    sync_spotify_from_youtube,
+)
 from .youtube import (
     DEFAULT_RATE_LIMIT_RETRY_SECONDS,
     DEFAULT_SEARCH_DELAY_SECONDS,
@@ -91,6 +98,9 @@ class SpotifyPlaylisterHandler(BaseHTTPRequestHandler):
                 return
             if parsed.path == "/api/sync":
                 self._json(self._sync(payload))
+                return
+            if parsed.path == "/api/sync-remove":
+                self._json(self._sync_remove(payload))
                 return
             self._not_found()
         except Exception as exc:
@@ -200,6 +210,43 @@ class SpotifyPlaylisterHandler(BaseHTTPRequestHandler):
                 store.mark_playlist_synced(saved.id)
         return {"summaries": summaries, "state": self._state()}
 
+    def _sync_remove(self, payload: dict[str, Any]) -> dict[str, object]:
+        playlist_id = int(payload.get("playlist_id") or 0)
+        direction = str(payload.get("direction") or "from_spotify")
+        dry_run = bool(payload.get("dry_run", True))
+        with self.web_app.store() as store:
+            saved = store.get_playlist(playlist_id)
+        if not saved:
+            raise WebError("Saved playlist not found.")
+        if direction not in {"from_spotify", "from_youtube"}:
+            raise WebError("Remove direction must be from_spotify or from_youtube.")
+
+        summaries: list[dict[str, object]] = []
+        if not dry_run and direction == "from_youtube":
+            self.web_app.spotify.ensure_playlist_writable(saved.spotify_playlist_id)
+        with self.web_app.store() as store:
+            if direction == "from_spotify":
+                tracks = self.web_app.spotify.playlist_tracks(saved.spotify_playlist_id)
+                result = remove_youtube_items_not_in_spotify(
+                    self.web_app.youtube(),
+                    tracks,
+                    saved.youtube_playlist_id,
+                    store,
+                    dry_run=dry_run,
+                )
+                summaries.append(_youtube_remove_summary(result))
+            if direction == "from_youtube":
+                result = remove_spotify_tracks_not_in_youtube(
+                    self.web_app.spotify,
+                    self.web_app.youtube(),
+                    saved.spotify_playlist_id,
+                    saved.youtube_playlist_id,
+                    store,
+                    dry_run=dry_run,
+                )
+                summaries.append(_spotify_remove_summary(result))
+        return {"summaries": summaries, "state": self._state()}
+
     def _read_json(self) -> dict[str, Any]:
         length = int(self.headers.get("Content-Length") or "0")
         if not length:
@@ -226,7 +273,7 @@ class SpotifyPlaylisterHandler(BaseHTTPRequestHandler):
         self._json({"error": "Not found"}, status=404)
 
     def _error(self, exc: Exception) -> None:
-        status = 400 if isinstance(exc, WebError) else 500
+        status = 400 if isinstance(exc, (SyncError, WebError)) else 500
         self._json({"error": str(exc)}, status=status)
 
 
@@ -266,6 +313,36 @@ def _spotify_summary(result) -> dict[str, object]:
                 "url": match.track.spotify_url,
             }
             for match in result.added
+        ],
+    }
+
+
+def _youtube_remove_summary(result) -> dict[str, object]:
+    return {
+        "direction": "Remove from YouTube",
+        "removed": len(result.removed),
+        "kept": len(result.kept),
+        "items": [
+            {
+                "youtube": item.title,
+                "url": f"https://www.youtube.com/watch?v={item.video_id}",
+            }
+            for item in result.removed
+        ],
+    }
+
+
+def _spotify_remove_summary(result) -> dict[str, object]:
+    return {
+        "direction": "Remove from Spotify",
+        "removed": len(result.removed),
+        "kept": len(result.kept),
+        "items": [
+            {
+                "spotify": f"{match.track.artists_text} - {match.track.track_name}",
+                "url": match.track.spotify_url,
+            }
+            for match in result.removed
         ],
     }
 
@@ -419,9 +496,7 @@ INDEX_HTML = r"""<!doctype html>
     .meta { color: var(--muted); font-size: 12px; }
     .actions {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
       gap: 12px;
-      align-items: end;
     }
     .action-group {
       display: flex;
@@ -457,7 +532,6 @@ INDEX_HTML = r"""<!doctype html>
       header, main { display: block; }
       .status { margin-top: 18px; }
       .content { margin-top: 22px; }
-      .actions { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -544,6 +618,13 @@ INDEX_HTML = r"""<!doctype html>
               <button type="button" title="Preview adds in both directions." onclick="sync(${p.id}, 'both', true)">Preview both</button>
               <button class="secondary" type="button" title="Add missing tracks in both directions." onclick="sync(${p.id}, 'both', false)">Add missing both ways</button>
             </div>
+            <div class="action-group">
+              <div class="action-label">Remove stale tracks</div>
+              <button type="button" title="Show YouTube playlist items that are not mapped from the current Spotify playlist." onclick="removeSync(${p.id}, 'from_spotify', true)">Preview YouTube removals</button>
+              <button class="danger" type="button" title="Remove YouTube playlist items that are not mapped from the current Spotify playlist." onclick="removeSync(${p.id}, 'from_spotify', false)">Remove from YouTube</button>
+              <button type="button" title="Show Spotify tracks that are not mapped from the current YouTube playlist." onclick="removeSync(${p.id}, 'from_youtube', true)">Preview Spotify removals</button>
+              <button class="danger" type="button" title="Remove Spotify tracks that are not mapped from the current YouTube playlist." onclick="removeSync(${p.id}, 'from_youtube', false)">Remove from Spotify</button>
+            </div>
             <button class="danger" type="button" title="Remove this saved playlist pair from the local database. This does not delete either real playlist." onclick="deletePlaylist(${p.id})">Forget pair</button>
           </div>
         </div>`).join("") || `<div class="meta" style="padding:16px">No playlist pairs saved yet.</div>`;
@@ -575,6 +656,16 @@ INDEX_HTML = r"""<!doctype html>
       setResult(result.summaries);
       setStatus("Ready");
     }
+    async function removeSync(id, direction, dryRun) {
+      const target = direction === "from_spotify" ? "YouTube" : "Spotify";
+      if (!dryRun && !confirm(`Remove stale tracks from ${target}? Run preview first if you have not reviewed the list.`)) return;
+      setStatus(dryRun ? "Checking removals" : "Removing");
+      const result = await api("/api/sync-remove", { method: "POST", body: JSON.stringify({ playlist_id: id, direction, dry_run: dryRun }) });
+      state = result.state;
+      render();
+      setResult(result.summaries);
+      setStatus("Ready");
+    }
     async function deletePlaylist(id) {
       if (!confirm("Delete this saved pair?")) return;
       await api(`/api/playlists/${id}`, { method: "DELETE" });
@@ -594,6 +685,7 @@ INDEX_HTML = r"""<!doctype html>
       return `<a href="https://open.spotify.com/track/${encodeURIComponent(mapping.spotify_track_id)}" target="_blank">${label}</a>`;
     }
     window.sync = sync;
+    window.removeSync = removeSync;
     window.deletePlaylist = deletePlaylist;
     window.deleteMapping = deleteMapping;
     $("playlistForm").addEventListener("submit", event => { event.preventDefault(); submitForm(event.target, "/api/playlists").catch(showError); });
