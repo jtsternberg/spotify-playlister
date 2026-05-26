@@ -417,7 +417,26 @@ INDEX_HTML = r"""<!doctype html>
     }
     .playlist strong { display: block; font-size: 15px; }
     .meta { color: var(--muted); font-size: 12px; }
-    .actions { display: flex; gap: 9px; flex-wrap: wrap; }
+    .actions {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: end;
+    }
+    .action-group {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .action-label {
+      width: 100%;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }
     .result {
       white-space: pre-wrap;
       padding: 14px 16px;
@@ -438,6 +457,7 @@ INDEX_HTML = r"""<!doctype html>
       header, main { display: block; }
       .status { margin-top: 18px; }
       .content { margin-top: 22px; }
+      .actions { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -517,11 +537,14 @@ INDEX_HTML = r"""<!doctype html>
           </div>
           <div class="meta">${p.last_synced_at ? "Last synced " + new Date(p.last_synced_at * 1000).toLocaleString() : "Never synced"} ${p.notes ? " - " + escapeHtml(p.notes) : ""}</div>
           <div class="actions">
-            <button type="button" onclick="sync(${p.id}, 'from_spotify', true)">Dry YouTube</button>
-            <button type="button" onclick="sync(${p.id}, 'from_youtube', true)">Dry Spotify</button>
-            <button type="button" onclick="sync(${p.id}, 'both', true)">Dry both</button>
-            <button class="secondary" type="button" onclick="sync(${p.id}, 'both', false)">Apply both</button>
-            <button class="danger" type="button" onclick="deletePlaylist(${p.id})">Delete</button>
+            <div class="action-group">
+              <div class="action-label">Add missing tracks</div>
+              <button type="button" title="Show Spotify tracks that would be added to YouTube." onclick="sync(${p.id}, 'from_spotify', true)">Preview YouTube adds</button>
+              <button type="button" title="Show YouTube videos that would be added back to Spotify." onclick="sync(${p.id}, 'from_youtube', true)">Preview Spotify adds</button>
+              <button type="button" title="Preview adds in both directions." onclick="sync(${p.id}, 'both', true)">Preview both</button>
+              <button class="secondary" type="button" title="Add missing tracks in both directions." onclick="sync(${p.id}, 'both', false)">Add missing both ways</button>
+            </div>
+            <button class="danger" type="button" title="Remove this saved playlist pair from the local database. This does not delete either real playlist." onclick="deletePlaylist(${p.id})">Forget pair</button>
           </div>
         </div>`).join("") || `<div class="meta" style="padding:16px">No playlist pairs saved yet.</div>`;
       const needle = $("filter").value.trim().toLowerCase();
