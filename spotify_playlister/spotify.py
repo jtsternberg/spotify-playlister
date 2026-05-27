@@ -52,6 +52,10 @@ def extract_playlist_id(value: str) -> str:
     return value
 
 
+def playlist_url(playlist_id: str) -> str:
+    return f"https://open.spotify.com/playlist/{extract_playlist_id(playlist_id)}"
+
+
 def extract_track_id(value: str) -> str:
     value = value.strip()
     if value.startswith("spotify:track:"):

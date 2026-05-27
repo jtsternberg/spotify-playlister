@@ -16,6 +16,7 @@ from spotify_playlister.youtube import (
     extract_video_id,
     match_tracks,
     next_quota_reset,
+    playlist_url,
     quota_reset_description,
 )
 
@@ -78,6 +79,9 @@ class YouTubeTests(unittest.TestCase):
 
     def test_extract_playlist_id_from_playlist_url(self):
         self.assertEqual(extract_playlist_id("https://www.youtube.com/playlist?list=PL123"), "PL123")
+
+    def test_playlist_url(self):
+        self.assertEqual(playlist_url("https://www.youtube.com/playlist?list=PL123"), "https://www.youtube.com/playlist?list=PL123")
 
     def test_set_playlist_privacy_updates_status(self):
         service = FakeYouTubeService()

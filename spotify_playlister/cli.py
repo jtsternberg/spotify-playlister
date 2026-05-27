@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .csv_export import write_tracks_csv
 from .env import load_env
-from .spotify import SpotifyClient, SpotifyError, cache_dir, extract_playlist_id
+from .spotify import SpotifyClient, SpotifyError, cache_dir, extract_playlist_id, playlist_url as spotify_playlist_url
 from .sync import (
     MatchStore,
     SyncError,
@@ -16,7 +16,15 @@ from .sync import (
     sync_spotify_from_youtube,
 )
 from .web import serve_web_app
-from .youtube import DEFAULT_RATE_LIMIT_RETRY_SECONDS, DEFAULT_SEARCH_DELAY_SECONDS, YouTubeClient, YouTubeError, YouTubeMatch, match_tracks
+from .youtube import (
+    DEFAULT_RATE_LIMIT_RETRY_SECONDS,
+    DEFAULT_SEARCH_DELAY_SECONDS,
+    YouTubeClient,
+    YouTubeError,
+    YouTubeMatch,
+    match_tracks,
+    playlist_url as youtube_playlist_url,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -232,7 +240,9 @@ def list_playlists(spotify: SpotifyClient) -> int:
     playlists = spotify.list_playlists()
     for playlist in playlists:
         owner = (playlist.get("owner") or {}).get("display_name") or ""
-        print(f"{playlist.get('id')}\t{playlist.get('name')}\t{owner}")
+        playlist_id = str(playlist.get("id") or "")
+        url = ((playlist.get("external_urls") or {}).get("spotify")) or spotify_playlist_url(playlist_id)
+        print(f"{playlist_id}\t{playlist.get('name')}\t{owner}\t{url}")
     return 0
 
 
@@ -277,13 +287,13 @@ def export_youtube(spotify: SpotifyClient, args: argparse.Namespace) -> int:
         spotify_playlist = spotify.playlist(playlist_id)
         title = args.title or f"{spotify_playlist.get('name', 'Spotify playlist')} (Spotify import)"
         youtube_playlist_id = youtube.create_playlist(title, args.description, args.privacy)
-        print(f"Created YouTube playlist: https://www.youtube.com/playlist?list={youtube_playlist_id}")
+        print(f"Created YouTube playlist: {youtube_playlist_url(youtube_playlist_id)}")
 
     for match in matches:
         youtube.add_video(youtube_playlist_id, match.video_id)
         print(f"Added {match.video_id}")
 
-    print(f"Added {len(matches)} videos to https://www.youtube.com/playlist?list={youtube_playlist_id}")
+    print(f"Added {len(matches)} videos to {youtube_playlist_url(youtube_playlist_id)}")
     return 0
 
 
@@ -426,7 +436,7 @@ def set_youtube_privacy(args: argparse.Namespace) -> int:
     client_secrets = args.youtube_client_secrets.expanduser() if args.youtube_client_secrets else None
     youtube = YouTubeClient.from_oauth_config(cache_dir() / "youtube-token.json", client_secrets)
     privacy = youtube.set_playlist_privacy(args.youtube_playlist_id, args.privacy)
-    print(f"Updated https://www.youtube.com/playlist?list={args.youtube_playlist_id} to {privacy}.")
+    print(f"Updated {youtube_playlist_url(args.youtube_playlist_id)} to {privacy}.")
     return 0
 
 

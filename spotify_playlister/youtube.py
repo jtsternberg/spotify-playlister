@@ -277,6 +277,10 @@ def extract_playlist_id(value: str) -> str:
     return value
 
 
+def playlist_url(playlist_id: str) -> str:
+    return f"https://www.youtube.com/playlist?list={extract_playlist_id(playlist_id)}"
+
+
 def _quota_error_reason(exc: Exception) -> str | None:
     status = getattr(getattr(exc, "resp", None), "status", None)
     if status not in {403, 429}:

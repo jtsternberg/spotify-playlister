@@ -9,7 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from .spotify import SpotifyClient, extract_playlist_id
+from .spotify import SpotifyClient, extract_playlist_id, playlist_url as spotify_playlist_url
 from .sync import (
     MatchStore,
     SyncError,
@@ -24,6 +24,7 @@ from .youtube import (
     YouTubeClient,
     YouTubeMatch,
     extract_playlist_id as extract_youtube_playlist_id,
+    playlist_url as youtube_playlist_url,
 )
 
 
@@ -131,7 +132,7 @@ class SpotifyPlaylisterHandler(BaseHTTPRequestHandler):
     def _state(self) -> dict[str, object]:
         with self.web_app.store() as store:
             return {
-                "playlists": [asdict(playlist) for playlist in store.playlists()],
+                "playlists": [_playlist_payload(playlist) for playlist in store.playlists()],
                 "mappings": store.matches(),
             }
 
@@ -279,6 +280,13 @@ class SpotifyPlaylisterHandler(BaseHTTPRequestHandler):
 
 class WebError(RuntimeError):
     pass
+
+
+def _playlist_payload(playlist) -> dict[str, object]:
+    payload = asdict(playlist)
+    payload["spotify_url"] = spotify_playlist_url(playlist.spotify_playlist_id)
+    payload["youtube_url"] = youtube_playlist_url(playlist.youtube_playlist_id)
+    return payload
 
 
 def _youtube_summary(result) -> dict[str, object]:
@@ -606,8 +614,8 @@ INDEX_HTML = r"""<!doctype html>
       $("playlists").innerHTML = state.playlists.map(p => `
         <div class="playlist">
           <div>
-            <strong>${escapeHtml(p.spotify_name || p.spotify_playlist_id)}</strong>
-            <div class="meta">Spotify ${escapeHtml(p.spotify_playlist_id)}<br>YouTube ${escapeHtml(p.youtube_title || p.youtube_playlist_id)}</div>
+            <strong>${spotifyPlaylistLink(p)}</strong>
+            <div class="meta">Spotify ${spotifyPlaylistIdLink(p)}<br>YouTube ${youtubePlaylistLink(p)}</div>
           </div>
           <div class="meta">${p.last_synced_at ? "Last synced " + new Date(p.last_synced_at * 1000).toLocaleString() : "Never synced"} ${p.notes ? " - " + escapeHtml(p.notes) : ""}</div>
           <div class="actions">
@@ -683,6 +691,21 @@ INDEX_HTML = r"""<!doctype html>
       const label = escapeHtml(mapping.query || mapping.spotify_track_id || "");
       if (!mapping.spotify_track_id) return label;
       return `<a href="https://open.spotify.com/track/${encodeURIComponent(mapping.spotify_track_id)}" target="_blank">${label}</a>`;
+    }
+    function spotifyPlaylistLink(playlist) {
+      return `<a href="${escapeHtml(playlist.spotify_url || spotifyPlaylistUrl(playlist.spotify_playlist_id))}" target="_blank">${escapeHtml(playlist.spotify_name || playlist.spotify_playlist_id)}</a>`;
+    }
+    function spotifyPlaylistIdLink(playlist) {
+      return `<a href="${escapeHtml(playlist.spotify_url || spotifyPlaylistUrl(playlist.spotify_playlist_id))}" target="_blank">${escapeHtml(playlist.spotify_playlist_id)}</a>`;
+    }
+    function youtubePlaylistLink(playlist) {
+      return `<a href="${escapeHtml(playlist.youtube_url || youtubePlaylistUrl(playlist.youtube_playlist_id))}" target="_blank">${escapeHtml(playlist.youtube_title || playlist.youtube_playlist_id)}</a>`;
+    }
+    function spotifyPlaylistUrl(id) {
+      return `https://open.spotify.com/playlist/${encodeURIComponent(id)}`;
+    }
+    function youtubePlaylistUrl(id) {
+      return `https://www.youtube.com/playlist?list=${encodeURIComponent(id)}`;
     }
     window.sync = sync;
     window.removeSync = removeSync;

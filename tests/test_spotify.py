@@ -9,6 +9,7 @@ from spotify_playlister.spotify import (
     extract_track_id,
     parse_playlist_item,
     parse_spotify_track,
+    playlist_url,
 )
 
 
@@ -18,6 +19,9 @@ class SpotifyTests(unittest.TestCase):
 
     def test_extract_playlist_id_from_uri(self):
         self.assertEqual(extract_playlist_id("spotify:playlist:abc123"), "abc123")
+
+    def test_playlist_url(self):
+        self.assertEqual(playlist_url("spotify:playlist:abc123"), "https://open.spotify.com/playlist/abc123")
 
     def test_extract_track_id_from_url(self):
         self.assertEqual(extract_track_id("https://open.spotify.com/track/track123?si=xyz"), "track123")
