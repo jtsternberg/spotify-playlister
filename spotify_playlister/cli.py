@@ -48,7 +48,7 @@ def build_parser() -> argparse.ArgumentParser:
     export_youtube.add_argument("--title", help="Title for a new YouTube playlist.")
     export_youtube.add_argument("--description", default="Imported from Spotify with spotify-playlister.")
     export_youtube.add_argument("--privacy", choices=["private", "unlisted", "public"], default="private")
-    export_youtube.add_argument("--dry-run", action="store_true", help="Search YouTube and print matches without creating or inserting.")
+    export_youtube.add_argument("--apply", action="store_true", help="Actually create the playlist and insert videos. Without this flag, export-youtube only prints a dry run.")
     export_youtube.add_argument(
         "--youtube-search-delay",
         type=float,
@@ -70,7 +70,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Google OAuth Desktop client JSON. Defaults to YOUTUBE_CLIENT_ID/YOUTUBE_CLIENT_SECRET from .env.",
     )
-    sync_youtube.add_argument("--dry-run", action="store_true", help="Resolve matches and show changes without applying them.")
+    sync_youtube.add_argument("--apply", action="store_true", help="Actually apply changes. Without this flag, sync-youtube only prints a dry run.")
     sync_youtube.add_argument(
         "--spotify-search-uncached",
         action="store_true",
@@ -258,6 +258,7 @@ def export_csv(spotify: SpotifyClient, args: argparse.Namespace) -> int:
 
 
 def export_youtube(spotify: SpotifyClient, args: argparse.Namespace) -> int:
+    dry_run = not args.apply
     playlist_id = extract_playlist_id(args.playlist)
     tracks = spotify.playlist_tracks(playlist_id)
     client_secrets = args.youtube_client_secrets.expanduser() if args.youtube_client_secrets else None
@@ -278,7 +279,7 @@ def export_youtube(spotify: SpotifyClient, args: argparse.Namespace) -> int:
     if missing:
         print(f"Skipped {missing} tracks with no YouTube search result.", file=sys.stderr)
 
-    if args.dry_run:
+    if dry_run:
         print(f"Dry run complete. Found {len(matches)} YouTube matches for {len(tracks)} Spotify tracks.")
         return 0
 
@@ -298,13 +299,14 @@ def export_youtube(spotify: SpotifyClient, args: argparse.Namespace) -> int:
 
 
 def sync_youtube(spotify: SpotifyClient, args: argparse.Namespace) -> int:
+    dry_run = not args.apply
     playlist_id = extract_playlist_id(args.playlist)
     tracks = None
     client_secrets = args.youtube_client_secrets.expanduser() if args.youtube_client_secrets else None
     youtube = YouTubeClient.from_oauth_config(cache_dir() / "youtube-token.json", client_secrets)
     store = MatchStore(args.sync_db.expanduser())
     try:
-        if not args.dry_run and args.sync_direction in {"from_youtube", "both"}:
+        if not dry_run and args.sync_direction in {"from_youtube", "both"}:
             spotify.ensure_playlist_writable(playlist_id)
 
         if args.sync_direction in {"from_spotify", "both"}:
@@ -314,12 +316,12 @@ def sync_youtube(spotify: SpotifyClient, args: argparse.Namespace) -> int:
                 tracks,
                 args.youtube_playlist_id,
                 store,
-                dry_run=args.dry_run,
+                dry_run=dry_run,
                 delay_seconds=args.youtube_search_delay,
                 rate_limit_retry_seconds=args.youtube_rate_limit_retry,
                 on_progress=lambda message: print(message, file=sys.stderr),
             )
-            print_youtube_sync_result(result, args.dry_run)
+            print_youtube_sync_result(result, dry_run)
 
         if args.sync_direction in {"from_youtube", "both"}:
             result = sync_spotify_from_youtube(
@@ -328,12 +330,12 @@ def sync_youtube(spotify: SpotifyClient, args: argparse.Namespace) -> int:
                 playlist_id,
                 args.youtube_playlist_id,
                 store,
-                dry_run=args.dry_run,
+                dry_run=dry_run,
                 spotify_tracks=tracks,
                 allow_spotify_search=args.spotify_search_uncached,
                 on_progress=lambda message: print(message, file=sys.stderr),
             )
-            print_spotify_sync_result(result, args.dry_run)
+            print_spotify_sync_result(result, dry_run)
     finally:
         store.close()
 

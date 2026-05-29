@@ -75,44 +75,44 @@ YOUTUBE_CLIENT_SECRET="your-google-oauth-client-secret"
 YOUTUBE_REDIRECT_URI="http://localhost:8766/"
 ```
 
-Run a dry run first:
+`export-youtube` is a dry run by default — it searches and prints matches without creating or inserting anything:
 
 ```bash
-.venv/bin/spotify-playlister export-youtube "https://open.spotify.com/playlist/..." --dry-run
+.venv/bin/spotify-playlister export-youtube "https://open.spotify.com/playlist/..."
 ```
 
 The CLI waits between YouTube searches to avoid per-minute quota errors. If your Google project is still rate-limited, use a slower delay:
 
 ```bash
 .venv/bin/spotify-playlister export-youtube "https://open.spotify.com/playlist/..." \
-  --dry-run \
   --youtube-search-delay 5
 ```
 
-Create a new YouTube playlist and add the best video search result for each Spotify track:
+When the dry run looks right, add `--apply` to create a new YouTube playlist and add the best video search result for each Spotify track:
 
 ```bash
 .venv/bin/spotify-playlister export-youtube "https://open.spotify.com/playlist/..." \
-  --title "Imported from Spotify"
+  --title "Imported from Spotify" \
+  --apply
 ```
 
 Use an existing YouTube playlist instead:
 
 ```bash
 .venv/bin/spotify-playlister export-youtube "spotify:playlist:..." \
-  --youtube-playlist-id "PL..."
+  --youtube-playlist-id "PL..." \
+  --apply
 ```
 
 If you prefer the downloaded JSON file instead of `.env`, add `--youtube-client-secrets ~/Downloads/client_secret.json`.
 
 ## Sync To An Existing YouTube Playlist
 
-For playlists that already exist in both Spotify and YouTube, sync missing Spotify tracks into the YouTube playlist:
+For playlists that already exist in both Spotify and YouTube, sync missing Spotify tracks into the YouTube playlist. Like the other commands, `sync-youtube` is a dry run by default:
 
 ```bash
 .venv/bin/spotify-playlister sync-youtube "https://open.spotify.com/playlist/..." \
-  --youtube-playlist-id "PL..." \
-  --dry-run
+  --youtube-playlist-id "PL..."
 ```
 
 This default is one-way from Spotify to YouTube. You can make the direction explicit:
@@ -120,8 +120,7 @@ This default is one-way from Spotify to YouTube. You can make the direction expl
 ```bash
 .venv/bin/spotify-playlister sync-youtube "https://open.spotify.com/playlist/..." \
   --youtube-playlist-id "PL..." \
-  --from-spotify \
-  --dry-run
+  --from-spotify
 ```
 
 To add YouTube playlist items missing from Spotify, use `--from-youtube`:
@@ -129,8 +128,7 @@ To add YouTube playlist items missing from Spotify, use `--from-youtube`:
 ```bash
 .venv/bin/spotify-playlister sync-youtube "https://open.spotify.com/playlist/..." \
   --youtube-playlist-id "PL..." \
-  --from-youtube \
-  --dry-run
+  --from-youtube
 ```
 
 By default, YouTube-to-Spotify sync only uses cached mappings. This avoids adding bad Spotify guesses from unrelated YouTube videos. To allow Spotify search for uncached YouTube videos, opt in explicitly:
@@ -139,8 +137,7 @@ By default, YouTube-to-Spotify sync only uses cached mappings. This avoids addin
 .venv/bin/spotify-playlister sync-youtube "https://open.spotify.com/playlist/..." \
   --youtube-playlist-id "PL..." \
   --from-youtube \
-  --spotify-search-uncached \
-  --dry-run
+  --spotify-search-uncached
 ```
 
 To add missing tracks in both directions, use `--both`:
@@ -148,18 +145,18 @@ To add missing tracks in both directions, use `--both`:
 ```bash
 .venv/bin/spotify-playlister sync-youtube "https://open.spotify.com/playlist/..." \
   --youtube-playlist-id "PL..." \
-  --both \
-  --dry-run
+  --both
 ```
 
-The sync command keeps a SQLite cache at `~/.spotify-playlister/sync.sqlite` so later runs can reuse Spotify-to-YouTube matches instead of searching again. When the dry run looks right, run without `--dry-run`:
+The sync command keeps a SQLite cache at `~/.spotify-playlister/sync.sqlite` so later runs can reuse Spotify-to-YouTube matches instead of searching again. When the dry run looks right, add `--apply` to make the changes:
 
 ```bash
 .venv/bin/spotify-playlister sync-youtube "https://open.spotify.com/playlist/..." \
-  --youtube-playlist-id "PL..."
+  --youtube-playlist-id "PL..." \
+  --apply
 ```
 
-YouTube-to-Spotify sync uses cached mappings when available. With `--spotify-search-uncached`, it falls back to Spotify search from the YouTube video title. Review `--dry-run` output before applying searched matches.
+YouTube-to-Spotify sync uses cached mappings when available. With `--spotify-search-uncached`, it falls back to Spotify search from the YouTube video title. Review the dry-run output before re-running with `--apply`.
 
 ## Remove Stale Items
 
@@ -230,4 +227,4 @@ Change an existing playlist to `private`, `unlisted`, or `public`:
 
 ## Notes
 
-Spotify's playlist item endpoint is currently intended for playlists owned by or collaborative with the authenticated user. YouTube matching is search-based, so run `--dry-run` before inserting items into a playlist.
+Spotify's playlist item endpoint is currently intended for playlists owned by or collaborative with the authenticated user. YouTube matching is search-based, so every mutating command (`export-youtube`, `sync-youtube`, `sync-remove`) is a dry run by default — review the output, then re-run with `--apply` to make changes.
