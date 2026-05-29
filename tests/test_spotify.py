@@ -53,7 +53,7 @@ class SpotifyTests(unittest.TestCase):
         self.assertEqual(track.position, 1)
         self.assertEqual(track.artists_text, "Artist A; Artist B")
         self.assertEqual(track.duration, "3:05")
-        self.assertEqual(track.youtube_query, "Song Artist A; Artist B Album")
+        self.assertEqual(track.youtube_query, "Song Artist A; Artist B")
 
     def test_parse_spotify_track(self):
         track = parse_spotify_track(

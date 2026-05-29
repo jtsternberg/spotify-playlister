@@ -30,7 +30,10 @@ class PlaylistTrack:
 
     @property
     def youtube_query(self) -> str:
+        # Album name is deliberately excluded: it poisons search whenever the
+        # album shares a title with another track (e.g. "Cages" on the album
+        # "Holy Water" → returns Holy Water), is self-titled (doubles the
+        # artist), or carries cruft like "(Deluxe)". Artist + track is the
+        # reliable form.
         parts = [self.track_name, self.artists_text]
-        if self.album_name:
-            parts.append(self.album_name)
         return " ".join(part for part in parts if part)
