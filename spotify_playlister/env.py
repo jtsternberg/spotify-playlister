@@ -4,7 +4,14 @@ import os
 from pathlib import Path
 
 
-def load_env(path: Path = Path(".env")) -> None:
+def load_env(path: Path | None = None) -> None:
+    if path is None:
+        # Prefer a .env in the current directory, then fall back to the one
+        # alongside the project so the CLI works from any working directory.
+        cwd_env = Path(".env")
+        repo_env = Path(__file__).resolve().parent.parent / ".env"
+        path = cwd_env if cwd_env.exists() else repo_env
+
     if not path.exists():
         return
 
