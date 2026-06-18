@@ -82,6 +82,8 @@ The CSV is designed to round-trip with `export-csv` but is lenient for hand-auth
 
 Unknown columns are ignored. Each row is resolved in order: `track_id` → `spotify_url` → search by `track_name` + `artists`. Rows that can't be resolved are skipped and reported.
 
+Row numbers in the output count **data rows** (the header is excluded), so "row 1" is the first track — i.e. line 2 of the file.
+
 Search results are flagged as `(search guess)` in the dry-run preview — review them before applying. Pass `--no-search` to skip the search fallback entirely and only use rows with a `track_id` or `spotify_url`.
 
 New playlists are **private by default**; add `--public` to make them public.

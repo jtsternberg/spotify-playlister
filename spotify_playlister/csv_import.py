@@ -9,7 +9,7 @@ from .spotify import SpotifyClient, extract_track_id
 
 @dataclass(frozen=True)
 class CsvRow:
-    line: int
+    line: int  # 1-based data row (header excluded); first track is row 1, file line 2
     track_id: str
     spotify_url: str
     track_name: str

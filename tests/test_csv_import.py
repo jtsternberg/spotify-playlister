@@ -254,5 +254,51 @@ class TestCreatePlaylist403(unittest.TestCase):
             self.assertIn("playlist-modify", str(ctx.exception))
 
 
+# ── SpotifyClient.add_tracks 400 error ────────────────────────────────────────
+
+class TestAddTracks400(unittest.TestCase):
+    def test_400_raises_friendly_spotify_error(self):
+        from unittest.mock import patch as _patch
+        from spotify_playlister.spotify import SpotifyClient, SpotifyApiError, SpotifyError
+
+        client = SpotifyClient.__new__(SpotifyClient)
+        client.token_path = Path("/tmp/fake-token.json")
+
+        def fake_json_request(*a, **kw):
+            raise SpotifyApiError(400, "Bad request")
+
+        with _patch("spotify_playlister.spotify._json_request", fake_json_request), \
+             _patch.object(client, "access_token", return_value="fake"):
+            with self.assertRaises(SpotifyError) as ctx:
+                client.add_tracks("pl", ["not-a-real-id"])
+            message = str(ctx.exception)
+            self.assertIn("HTTP 400", message)
+            self.assertIn("not-a-real-id", message)
+
+
+# ── argparse mutual exclusivity of --playlist-id / --title ────────────────────
+
+class TestImportCsvArgParsing(unittest.TestCase):
+    def test_both_targets_is_error(self):
+        with self.assertRaises(SystemExit) as ctx:
+            cli.build_parser().parse_args(["import-csv", "x.csv", "--playlist-id", "A", "--title", "B"])
+        self.assertEqual(ctx.exception.code, 2)
+
+    def test_neither_target_is_error(self):
+        with self.assertRaises(SystemExit) as ctx:
+            cli.build_parser().parse_args(["import-csv", "x.csv"])
+        self.assertEqual(ctx.exception.code, 2)
+
+    def test_playlist_id_alone_ok(self):
+        args = cli.build_parser().parse_args(["import-csv", "x.csv", "--playlist-id", "A"])
+        self.assertEqual(args.playlist_id, "A")
+        self.assertIsNone(args.title)
+
+    def test_title_alone_ok(self):
+        args = cli.build_parser().parse_args(["import-csv", "x.csv", "--title", "B"])
+        self.assertEqual(args.title, "B")
+        self.assertIsNone(args.playlist_id)
+
+
 if __name__ == "__main__":
     unittest.main()

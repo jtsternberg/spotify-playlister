@@ -280,14 +280,14 @@ def cmd_import_csv(spotify: SpotifyClient, args: argparse.Namespace) -> int:
         spotify,
         rows,
         search=not args.no_search,
-        on_search=lambda r: print(f"Searching Spotify for line {r.line}: {r.artists} - {r.track_name}", file=sys.stderr),
+        on_search=lambda r: print(f"Searching Spotify for row {r.line}: {r.artists} - {r.track_name}", file=sys.stderr),
     )
 
     for r in resolved:
         flag = " (search guess)" if r.source == "search" else ""
         print(f"{r.row.line}. {r.label} [{r.track_id}]{flag}")
     for r in unresolved:
-        print(f"skip line {r.line}: no track_id/spotify_url and no search match.", file=sys.stderr)
+        print(f"skip row {r.line}: no track_id/spotify_url and no search match.", file=sys.stderr)
 
     if dry_run:
         print(f"Dry run complete. Would add {len(resolved)} tracks ({len(unresolved)} skipped).")

@@ -254,6 +254,12 @@ class SpotifyClient:
                         "playlist-modify-private/playlist-modify-public. If you just changed scopes, delete "
                         f"{self.token_path} and rerun."
                     ) from exc
+                if exc.status == 400:
+                    raise SpotifyError(
+                        f"Spotify rejected the request to add tracks to playlist {playlist_id} (HTTP 400). "
+                        "This usually means one of the track IDs is invalid or malformed. "
+                        f"Check the source IDs: {', '.join(chunk)}"
+                    ) from exc
                 raise
 
     def remove_tracks(self, playlist_id: str, track_ids: list[str]) -> None:
