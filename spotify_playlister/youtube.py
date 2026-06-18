@@ -62,6 +62,7 @@ class YouTubeClient:
     @classmethod
     def from_oauth_config(cls, token_path: Path, client_secrets: Path | None = None) -> "YouTubeClient":
         try:
+            from google.auth.exceptions import RefreshError
             from google.auth.transport.requests import Request
             from google.oauth2.credentials import Credentials
             from google_auth_oauthlib.flow import InstalledAppFlow
@@ -74,18 +75,30 @@ class YouTubeClient:
             credentials = Credentials.from_authorized_user_file(str(token_path), YOUTUBE_SCOPES)
         if not credentials or not credentials.valid:
             if credentials and credentials.expired and credentials.refresh_token:
-                credentials.refresh(Request())
-            else:
+                try:
+                    credentials.refresh(Request())
+                except RefreshError:
+                    # Stale refresh token — fall through to interactive re-auth below.
+                    credentials = None
+            if not credentials or not credentials.valid:
                 if client_secrets:
                     flow = InstalledAppFlow.from_client_secrets_file(str(client_secrets), YOUTUBE_SCOPES)
                 else:
                     flow = InstalledAppFlow.from_client_config(_client_config_from_env(), YOUTUBE_SCOPES)
                 redirect = _youtube_redirect()
-                credentials = flow.run_local_server(
-                    host=redirect.hostname or "localhost",
-                    port=redirect.port or 8766,
-                    redirect_uri_trailing_slash=redirect.path.endswith("/"),
-                )
+                try:
+                    credentials = flow.run_local_server(
+                        host=redirect.hostname or "localhost",
+                        port=redirect.port or 8766,
+                        redirect_uri_trailing_slash=redirect.path.endswith("/"),
+                    )
+                except OSError as exc:
+                    port = redirect.port or 8766
+                    raise YouTubeError(
+                        f"Auth callback port {port} is already in use — another authorization may be in "
+                        f"progress. Close the previous browser tab or kill the process holding port {port}, "
+                        "then rerun."
+                    ) from exc
             token_path.parent.mkdir(parents=True, exist_ok=True)
             token_path.write_text(credentials.to_json(), encoding="utf-8")
             token_path.chmod(0o600)
