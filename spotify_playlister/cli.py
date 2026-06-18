@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from .csv_export import write_tracks_csv
+from .csv_import import read_rows, resolve_rows
 from .env import load_env
 from .spotify import SpotifyClient, SpotifyError, cache_dir, extract_playlist_id, playlist_url as spotify_playlist_url
 from .sync import (
@@ -36,6 +37,16 @@ def build_parser() -> argparse.ArgumentParser:
     export_csv = subparsers.add_parser("export-csv", help="Export a Spotify playlist to CSV.")
     export_csv.add_argument("playlist", help="Spotify playlist ID, URI, or open.spotify.com playlist URL.")
     export_csv.add_argument("--output", "-o", type=Path, help="CSV output path. Defaults to stdout.")
+
+    import_csv_p = subparsers.add_parser("import-csv", help="Add tracks from a CSV into a Spotify playlist (existing or newly created).")
+    import_csv_p.add_argument("csv", type=Path, help="CSV file of tracks. Reads track_id, then spotify_url, then track_name+artists.")
+    import_csv_target = import_csv_p.add_mutually_exclusive_group(required=True)
+    import_csv_target.add_argument("--playlist-id", help="Existing Spotify playlist ID, URI, or URL to add into.")
+    import_csv_target.add_argument("--title", help="Create a new Spotify playlist with this title and add into it.")
+    import_csv_p.add_argument("--description", default="Imported with spotify-playlister.", help="Description for a newly created playlist.")
+    import_csv_p.add_argument("--public", action="store_true", help="Make the newly created playlist public. Default is private.")
+    import_csv_p.add_argument("--no-search", action="store_true", help="Do not search Spotify for rows lacking a track_id/spotify_url; skip them instead.")
+    import_csv_p.add_argument("--apply", action="store_true", help="Actually create/modify the playlist. Without this flag, import-csv only prints a dry run.")
 
     export_youtube = subparsers.add_parser("export-youtube", help="Create or update a YouTube playlist from a Spotify playlist.")
     export_youtube.add_argument("playlist", help="Spotify playlist ID, URI, or open.spotify.com playlist URL.")
@@ -215,6 +226,8 @@ def main(argv: list[str] | None = None) -> int:
             return list_playlists(spotify)
         if args.command == "export-csv":
             return export_csv(spotify, args)
+        if args.command == "import-csv":
+            return cmd_import_csv(spotify, args)
         if args.command == "export-youtube":
             return export_youtube(spotify, args)
         if args.command == "sync-youtube":
@@ -254,6 +267,44 @@ def export_csv(spotify: SpotifyClient, args: argparse.Namespace) -> int:
         print(f"Wrote {len(tracks)} tracks to {args.output}")
     else:
         write_tracks_csv(tracks, sys.stdout)
+    return 0
+
+
+def cmd_import_csv(spotify: SpotifyClient, args: argparse.Namespace) -> int:
+    dry_run = not args.apply
+    rows = read_rows(args.csv)
+    if not rows:
+        print("No data rows found in CSV.", file=sys.stderr)
+        return 1
+    resolved, unresolved = resolve_rows(
+        spotify,
+        rows,
+        search=not args.no_search,
+        on_search=lambda r: print(f"Searching Spotify for line {r.line}: {r.artists} - {r.track_name}", file=sys.stderr),
+    )
+
+    for r in resolved:
+        flag = " (search guess)" if r.source == "search" else ""
+        print(f"{r.row.line}. {r.label} [{r.track_id}]{flag}")
+    for r in unresolved:
+        print(f"skip line {r.line}: no track_id/spotify_url and no search match.", file=sys.stderr)
+
+    if dry_run:
+        print(f"Dry run complete. Would add {len(resolved)} tracks ({len(unresolved)} skipped).")
+        return 0
+    if not resolved:
+        print("Nothing to add.", file=sys.stderr)
+        return 1
+
+    if args.title:
+        playlist_id = spotify.create_playlist(args.title, public=args.public, description=args.description)
+        print(f"Created Spotify playlist: {spotify_playlist_url(playlist_id)}")
+    else:
+        playlist_id = extract_playlist_id(args.playlist_id)
+        spotify.ensure_playlist_writable(playlist_id)
+
+    spotify.add_tracks(playlist_id, [r.track_id for r in resolved])
+    print(f"Added {len(resolved)} tracks to {spotify_playlist_url(playlist_id)}")
     return 0
 
 

@@ -1,14 +1,14 @@
 ---
 name: using-spotify-playlister
 description: >-
-  Drive the `spotify-playlister` CLI in this repo — export Spotify playlists to
-  CSV, mirror them as YouTube playlists, sync tracks between Spotify and YouTube
-  in either direction, prune stale items, hand-map tricky track→video matches,
-  and run the local web UI.
+  Drive the `spotify-playlister` CLI in this repo — import tracks from a CSV into
+  Spotify, export Spotify playlists to CSV, mirror them as YouTube playlists,
+  sync tracks between Spotify and YouTube in either direction, prune stale items,
+  hand-map tricky track→video matches, and run the local web UI.
 when_to_use: >-
   Use whenever the user is working with Spotify playlists, YouTube playlists,
-  the export-csv / export-youtube / sync-youtube / sync-remove / map-youtube /
-  set-youtube-privacy / web subcommands, the sync cache at
+  the import-csv / export-csv / export-youtube / sync-youtube / sync-remove /
+  map-youtube / set-youtube-privacy / web subcommands, the sync cache at
   ~/.spotify-playlister/sync.sqlite, or asks why an item is being added/removed
   by a sync — even if they don't name the CLI explicitly.
 ---
@@ -81,6 +81,23 @@ spotify-playlister export-csv <playlist> -o playlist.csv   # omit -o for stdout
 ```
 Columns: position, track, artists, album, Spotify URL, duration, release date,
 ISRC, and a local-file flag. Read-only; safe to run anytime.
+
+### `import-csv` — add tracks from a CSV into a Spotify playlist  ⚠️ commits only with `--apply`
+```bash
+# Preview: resolve tracks and show what would be added (nothing changes):
+spotify-playlister import-csv playlist.csv --title "New Playlist"
+
+# Create a new Spotify playlist and add the tracks:
+spotify-playlister import-csv playlist.csv --title "New Playlist" --apply
+
+# Add into an existing Spotify playlist:
+spotify-playlister import-csv playlist.csv --playlist-id <id-or-url> --apply
+```
+Exactly one of `--playlist-id` (existing playlist) or `--title` (create new) is required. New
+playlists are private by default; `--public` opts in. Resolution order per row: `track_id` column
+→ `spotify_url` column → search by `track_name` + `artists` (search hits are flagged `(search guess)`
+in the preview — review before applying). Pass `--no-search` to skip search and skip unresolvable
+rows instead.
 
 ### `export-youtube` — create/fill a YouTube playlist  ⚠️ commits only with `--apply`
 ```bash
@@ -188,6 +205,10 @@ spotify-playlister export-youtube <playlist> --youtube-search-delay 5
 hit (`0` = fail immediately). Same flags exist on `sync-youtube`.
 
 ## Common workflows
+
+- **Copy/seed a Spotify playlist from a CSV:** `import-csv <file> --title "..."` (preview) →
+  review search guesses → rerun with `--apply`. Search fallback can mis-pick — always review the
+  dry-run output before applying. Use `--no-search` if you only want exact id/url matches.
 
 - **"What's waiting to sync, and are the matches good?" (both directions):** the
   go-to status check for a saved pair. Runs both previews and scores each pending

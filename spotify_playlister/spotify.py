@@ -210,6 +210,29 @@ class SpotifyClient:
             "Use a Spotify playlist owned by this account, make the playlist collaborative, or run without --from-youtube/--both."
         )
 
+    def create_playlist(self, name: str, public: bool = False, description: str = "") -> str:
+        user_id = self.current_user_id()
+        headers = {"Authorization": f"Bearer {self.access_token()}"}
+        try:
+            payload = _json_request(
+                f"{API_BASE}/users/{user_id}/playlists",
+                method="POST",
+                headers=headers,
+                json_data={"name": name, "public": public, "description": description},
+            )
+        except SpotifyApiError as exc:
+            if exc.status == 403:
+                raise SpotifyError(
+                    "Spotify refused to create the playlist. Confirm authorization includes "
+                    "playlist-modify-private/playlist-modify-public; if you just changed scopes, "
+                    f"delete {self.token_path} and rerun."
+                ) from exc
+            raise
+        playlist_id = str(payload.get("id") or "")
+        if not playlist_id:
+            raise SpotifyError("Spotify did not return an id for the new playlist.")
+        return playlist_id
+
     def add_tracks(self, playlist_id: str, track_ids: list[str]) -> None:
         headers = {"Authorization": f"Bearer {self.access_token()}"}
         for index in range(0, len(track_ids), 100):

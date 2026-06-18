@@ -52,6 +52,40 @@ The CSV includes:
 - ISRC
 - whether the row is a local Spotify file
 
+## Import From CSV
+
+Add tracks from a CSV into a Spotify playlist — either an existing one or a new one created on the fly. Like other mutating commands, `import-csv` is a dry run by default:
+
+```bash
+# Preview: resolve tracks and print what would be added (nothing changes)
+.venv/bin/spotify-playlister import-csv playlist.csv --title "Imported Playlist"
+
+# Create a new playlist and add the tracks
+.venv/bin/spotify-playlister import-csv playlist.csv --title "Imported Playlist" --apply
+
+# Add into an existing playlist
+.venv/bin/spotify-playlister import-csv playlist.csv --playlist-id <id-or-url> --apply
+```
+
+Exactly one of `--playlist-id` or `--title` is required.
+
+### CSV format
+
+The CSV is designed to round-trip with `export-csv` but is lenient for hand-authored files. Recognized columns (case-insensitive):
+
+| Column | Purpose |
+|--------|---------|
+| `track_id` | Spotify track ID — used first if present |
+| `spotify_url` | Full Spotify track URL — used if no `track_id` |
+| `track_name` | Track title — used as search fallback |
+| `artists` | Artist names (semicolon-separated) — used with `track_name` for search |
+
+Unknown columns are ignored. Each row is resolved in order: `track_id` → `spotify_url` → search by `track_name` + `artists`. Rows that can't be resolved are skipped and reported.
+
+Search results are flagged as `(search guess)` in the dry-run preview — review them before applying. Pass `--no-search` to skip the search fallback entirely and only use rows with a `track_id` or `spotify_url`.
+
+New playlists are **private by default**; add `--public` to make them public.
+
 ## Export To YouTube
 
 Install YouTube support:
