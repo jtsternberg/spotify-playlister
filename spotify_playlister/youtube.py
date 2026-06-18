@@ -91,6 +91,8 @@ class YouTubeClient:
                         host=redirect.hostname or "localhost",
                         port=redirect.port or 8766,
                         redirect_uri_trailing_slash=redirect.path.endswith("/"),
+                        access_type="offline",
+                        prompt="consent select_account",
                     )
                 except OSError as exc:
                     port = redirect.port or 8766
