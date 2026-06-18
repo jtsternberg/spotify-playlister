@@ -237,6 +237,7 @@ def match_tracks(
     rate_limit_retry_seconds: float = DEFAULT_RATE_LIMIT_RETRY_SECONDS,
     sleep: Callable[[float], None] = time.sleep,
     on_progress: Callable[[PlaylistTrack], None] | None = None,
+    on_match: Callable[["YouTubeMatch"], None] | None = None,
 ) -> list[YouTubeMatch]:
     matches: list[YouTubeMatch] = []
     for index, track in enumerate(tracks):
@@ -252,15 +253,16 @@ def match_tracks(
             sleep(rate_limit_retry_seconds)
             match = client.search_video(track.youtube_query)
         if match:
-            matches.append(
-                YouTubeMatch(
-                    track=track,
-                    video_id=match.video_id,
-                    title=match.title,
-                    channel=match.channel,
-                    url=match.url,
-                )
+            youtube_match = YouTubeMatch(
+                track=track,
+                video_id=match.video_id,
+                title=match.title,
+                channel=match.channel,
+                url=match.url,
             )
+            if on_match:
+                on_match(youtube_match)
+            matches.append(youtube_match)
     return matches
 
 
@@ -323,6 +325,13 @@ def _execute_youtube_request(request):
             raise YouTubeQuotaExceededError(
                 f"YouTube API hit the project quota limit. Daily quota resets {quota_reset_description()}; "
                 "or increase quota in Google Cloud."
+            ) from exc
+        status = getattr(getattr(exc, "resp", None), "status", None)
+        if status == 401 and "youtubeSignupRequired" in _error_details(exc):
+            raise YouTubeError(
+                "The authenticated Google account has no YouTube channel — create a channel at youtube.com "
+                "or re-authenticate with an account that has one "
+                "(delete ~/.spotify-playlister/youtube-token.json and rerun)."
             ) from exc
         raise
 

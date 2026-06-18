@@ -72,6 +72,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_RATE_LIMIT_RETRY_SECONDS,
         help="Seconds to wait before retrying once after a YouTube search rate limit. Use 0 to fail immediately.",
     )
+    export_youtube.add_argument(
+        "--sync-db",
+        type=Path,
+        default=cache_dir() / "sync.sqlite",
+        help="SQLite database used to cache Spotify-to-YouTube matches. Defaults to %(default)s.",
+    )
 
     sync_youtube = subparsers.add_parser("sync-youtube", help="Sync missing Spotify tracks into an existing YouTube playlist.")
     sync_youtube.add_argument("playlist", help="Spotify playlist ID, URI, or open.spotify.com playlist URL.")
@@ -314,13 +320,36 @@ def export_youtube(spotify: SpotifyClient, args: argparse.Namespace) -> int:
     tracks = spotify.playlist_tracks(playlist_id)
     client_secrets = args.youtube_client_secrets.expanduser() if args.youtube_client_secrets else None
     youtube = YouTubeClient.from_oauth_config(cache_dir() / "youtube-token.json", client_secrets)
-    matches = match_tracks(
-        youtube,
-        tracks,
-        delay_seconds=args.youtube_search_delay,
-        rate_limit_retry_seconds=args.youtube_rate_limit_retry,
-        on_progress=lambda track: print(f"Searching YouTube for {track.position}. {track.artists_text} - {track.track_name}", file=sys.stderr),
-    )
+
+    store = MatchStore(args.sync_db.expanduser())
+    try:
+        matches: list[YouTubeMatch] = []
+        tracks_to_search: list = []
+        for track in tracks:
+            cached = store.get(track)
+            if cached:
+                print(f"Cache hit: {track.position}. {track.artists_text} - {track.track_name}", file=sys.stderr)
+                matches.append(cached)
+            else:
+                tracks_to_search.append(track)
+
+        def _on_progress(track):
+            print(f"Searching YouTube for {track.position}. {track.artists_text} - {track.track_name}", file=sys.stderr)
+
+        def _on_match(match: YouTubeMatch) -> None:
+            store.set(match)
+
+        fresh = match_tracks(
+            youtube,
+            tracks_to_search,
+            delay_seconds=args.youtube_search_delay,
+            rate_limit_retry_seconds=args.youtube_rate_limit_retry,
+            on_progress=_on_progress,
+            on_match=_on_match,
+        )
+        matches.extend(fresh)
+    finally:
+        store.close()
 
     for match in matches:
         print(f"{match.track.position}. {match.track.artists_text} - {match.track.track_name}")
