@@ -269,10 +269,10 @@ class SpotifyClient:
             if not chunk:
                 continue
             _json_request(
-                f"{API_BASE}/playlists/{playlist_id}/tracks",
+                f"{API_BASE}/playlists/{playlist_id}/items",
                 method="DELETE",
                 headers=headers,
-                json_data={"tracks": [{"uri": f"spotify:track:{track_id}"} for track_id in chunk]},
+                json_data={"items": [{"uri": f"spotify:track:{track_id}"} for track_id in chunk]},
             )
 
     def get(self, url: str) -> dict[str, Any]:
