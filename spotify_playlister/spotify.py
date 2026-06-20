@@ -175,7 +175,7 @@ class SpotifyClient:
         return tracks
 
     def search_tracks(self, query: str, limit: int = 1) -> list[PlaylistTrack]:
-        params = urllib.parse.urlencode({"q": query, "type": "track", "limit": limit})
+        params = urllib.parse.urlencode({"q": query, "type": "track", "limit": min(limit, 10)})
         payload = self.get(f"{API_BASE}/search?{params}")
         items = ((payload.get("tracks") or {}).get("items") or [])
         tracks: list[PlaylistTrack] = []
@@ -211,11 +211,10 @@ class SpotifyClient:
         )
 
     def create_playlist(self, name: str, public: bool = False, description: str = "") -> str:
-        user_id = self.current_user_id()
         headers = {"Authorization": f"Bearer {self.access_token()}"}
         try:
             payload = _json_request(
-                f"{API_BASE}/users/{user_id}/playlists",
+                f"{API_BASE}/me/playlists",
                 method="POST",
                 headers=headers,
                 json_data={"name": name, "public": public, "description": description},
