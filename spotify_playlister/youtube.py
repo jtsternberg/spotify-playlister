@@ -322,11 +322,13 @@ def _execute_youtube_request(request):
         if quota_reason == "rateLimitExceeded":
             raise YouTubeRateLimitError(
                 "YouTube API hit a per-minute rate limit. Wait a minute or increase --youtube-search-delay."
+                + _youtube_api_detail(exc)
             ) from exc
         if quota_reason == "quotaExceeded":
             raise YouTubeQuotaExceededError(
                 f"YouTube API hit the project quota limit. Daily quota resets {quota_reset_description()}; "
                 "or increase quota in Google Cloud."
+                + _youtube_api_detail(exc)
             ) from exc
         status = getattr(getattr(exc, "resp", None), "status", None)
         if status == 401 and "youtubeSignupRequired" in _error_details(exc):
@@ -334,6 +336,7 @@ def _execute_youtube_request(request):
                 "The authenticated Google account has no YouTube channel — create a channel at youtube.com "
                 "or re-authenticate with an account that has one "
                 "(delete ~/.spotify-playlister/youtube-token.json and rerun)."
+                + _youtube_api_detail(exc)
             ) from exc
         raise
 
@@ -346,6 +349,14 @@ def _error_details(exc: Exception) -> str:
         return content
     details = str(exc)
     return details
+
+
+def _youtube_api_detail(exc: Exception) -> str:
+    status = getattr(getattr(exc, "resp", None), "status", None)
+    details = _error_details(exc)
+    if status:
+        return f"\n\nYouTube HTTP {status}: {details}"
+    return f"\n\nYouTube error: {details}"
 
 
 def quota_reset_description(now: datetime | None = None) -> str:

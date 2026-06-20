@@ -33,6 +33,10 @@ class SpotifyApiError(SpotifyError):
         self.details = details
 
 
+def _spotify_api_detail(exc: "SpotifyApiError") -> str:
+    return f"\n\nSpotify HTTP {exc.status}: {exc.details}"
+
+
 def cache_dir() -> Path:
     root = os.environ.get("SPOTIFY_PLAYLISTER_CACHE")
     if root:
@@ -225,6 +229,7 @@ class SpotifyClient:
                     "Spotify refused to create the playlist. Confirm authorization includes "
                     "playlist-modify-private/playlist-modify-public; if you just changed scopes, "
                     f"delete {self.token_path} and rerun."
+                    + _spotify_api_detail(exc)
                 ) from exc
             raise
         playlist_id = str(payload.get("id") or "")
@@ -252,12 +257,14 @@ class SpotifyClient:
                         "Confirm this Spotify account can modify the playlist and that authorization includes "
                         "playlist-modify-private/playlist-modify-public. If you just changed scopes, delete "
                         f"{self.token_path} and rerun."
+                        + _spotify_api_detail(exc)
                     ) from exc
                 if exc.status == 400:
                     raise SpotifyError(
                         f"Spotify rejected the request to add tracks to playlist {playlist_id} (HTTP 400). "
                         "This usually means one of the track IDs is invalid or malformed. "
                         f"Check the source IDs: {', '.join(chunk)}"
+                        + _spotify_api_detail(exc)
                     ) from exc
                 raise
 
